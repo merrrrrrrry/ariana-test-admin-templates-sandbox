@@ -64,12 +64,14 @@ export const DEFAULT_CONFIG: StarCommentsConfig = {
   enabled: true,
   startDate: null,
   endDate: null,
+  // 기존에 이미 보이던 두 자리만 켜 둔다. 새로 만든 자리는 꺼진 채로 시작해서, 포털에 위젯을 게시해도
+  // 어드민에서 체크하기 전에는 팬 화면이 달라지지 않는다.
   placements: {
     page: true,
     'user.contents-home.contents-section:after': true,
-    'user.contents-home.contents-section:before': true,
-    'user.contents-home.curation:after': true,
-    'user.community-board.feed:before': true,
+    'user.contents-home.contents-section:before': false,
+    'user.contents-home.curation:after': false,
+    'user.community-board.feed:before': false,
   },
   title: '스타의 댓글 모아보기',
   subtitle: '스타가 남긴 댓글을 한곳에서 확인해보세요',
