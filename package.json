@@ -1,0 +1,40 @@
+{
+  "name": "ariana-test-custom-templates-sandbox",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "bstage": {
+    "kind": "sdk",
+    "target": "admin"
+  },
+  "scripts": {
+    "dev": "vite dev",
+    "build": "bstage build",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@bstage-sdk/cli": "0.11.0",
+    "@bstage-sdk/core": "0.11.0",
+    "@bstage-sdk/design": "0.11.0",
+    "@bstage-sdk/react": "0.11.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "eslint": "^9.39.0",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "eslint-plugin-react-refresh": "^0.4.0",
+    "globals": "^16.0.0",
+    "husky": "^9.1.7",
+    "typescript": "~5.9.0",
+    "typescript-eslint": "^8.0.0",
+    "vite": "^7.0.0"
+  }
+}
