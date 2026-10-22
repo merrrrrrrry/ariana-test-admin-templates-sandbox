@@ -17,6 +17,7 @@ import {
 const LAYOUT_CSS = `
 .scs-layout { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 20px; align-items: start; }
 .scs-preview { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
+.scs-layout--pc { grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); }
 @media (max-width: 960px) {
   .scs-layout { grid-template-columns: minmax(0, 1fr); }
   .scs-preview { position: static; max-height: none; overflow: visible; }
@@ -212,8 +213,70 @@ const SAMPLE_COMMENTS = [
   { nickname: '애뤼애나', body: '팬 여러분 감사해요!', kind: 'community' as const, title: 'To. 애뤼애나', time: '방금 전' },
 ]
 
+type PreviewDevice = 'mobile' | 'pc'
+// 모바일은 좁은 폭(360px)에 1열, PC는 칸을 꽉 채워 2열로 보여 준다.
+const MOBILE_PREVIEW_WIDTH = 360
+
+function MobileIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
+      <path d="M10.5 18.5h3" />
+    </svg>
+  )
+}
+
+function PcIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2.5" y="4" width="19" height="13" rx="2" />
+      <path d="M8.5 21h7M12 17v4" />
+    </svg>
+  )
+}
+
+// 모바일 · PC 전환 버튼
+function DeviceToggle({ value, onChange }: { value: PreviewDevice; onChange: (next: PreviewDevice) => void }) {
+  const options: { key: PreviewDevice; label: string; icon: ReactNode }[] = [
+    { key: 'mobile', label: '모바일 보기', icon: <MobileIcon /> },
+    { key: 'pc', label: 'PC 보기', icon: <PcIcon /> },
+  ]
+  return (
+    <div role="group" aria-label="미리보기 화면 크기" style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: color.bg['grouped-default'] }}>
+      {options.map(({ key, label, icon }) => {
+        const active = value === key
+        return (
+          <button
+            key={key}
+            type="button"
+            aria-label={label}
+            aria-pressed={active}
+            title={label}
+            onClick={() => onChange(key)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 40,
+              height: 32,
+              border: 'none',
+              borderRadius: 8,
+              cursor: 'pointer',
+              background: active ? color.bg.base : 'transparent',
+              boxShadow: active ? shadow['default-small'] : 'none',
+              color: active ? color.text.primary : color.text['sub-a'],
+            }}
+          >
+            {icon}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // 유저 화면이 설정을 어떻게 보여 줄지 대략 미리 본다(문구 · 스타 순서 · 숨김 · 링크 문구).
-function Preview({ draft }: { draft: StarCommentsConfig }) {
+function Preview({ draft, device }: { draft: StarCommentsConfig; device: PreviewDevice }) {
   const rank = (nickname: string) => {
     const index = draft.starOrder.indexOf(nickname)
     return index === -1 ? draft.starOrder.length : index
@@ -238,17 +301,9 @@ function Preview({ draft }: { draft: StarCommentsConfig }) {
     ['대상', audience?.label ?? '전체 공개'],
     ['자리', placementsOn.length ? placementsOn.join(' · ') : '켜진 자리가 없어요'],
   ]
-  return (
-    <div style={{ background: color.bg['grouped-default'], borderRadius: 12, padding: 16 }}>
-      <dl style={{ margin: '0 0 12px', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px' }}>
-        {summary.map(([label, value]) => (
-          <div key={label} style={{ display: 'contents' }}>
-            <dt style={{ ...textStyle('12/body/bold'), color: color.text['sub-a'] }}>{label}</dt>
-            <dd style={{ ...textStyle('12/body/med'), color: color.text.primary, margin: 0, overflowWrap: 'anywhere' }}>{value}</dd>
-          </div>
-        ))}
-      </dl>
-      <div style={{ background: color.bg.base, borderRadius: 12, padding: 16 }}>
+  const pc = device === 'pc'
+  const screen = (
+    <div style={{ background: color.bg.base, borderRadius: 12, padding: pc ? 24 : 16, border: `1px solid ${color.border['divider-a']}` }}>
         <div style={{ ...textStyle('16/title/bold'), color: color.text.primary }}>{draft.title}</div>
         {draft.subtitle && <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary, marginTop: 2 }}>{draft.subtitle}</div>}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '12px 0' }}>
@@ -262,7 +317,7 @@ function Preview({ draft }: { draft: StarCommentsConfig }) {
         {cards.length === 0 ? (
           <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary }}>{draft.emptyText}</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: pc ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)', gap: 10 }}>
             {cards.map((c) => (
               <div key={c.nickname} style={{ border: `1px solid ${color.border['divider-a']}`, borderRadius: 10, padding: 12, boxShadow: shadow['default-small'] }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -278,7 +333,19 @@ function Preview({ draft }: { draft: StarCommentsConfig }) {
             ))}
           </div>
         )}
-      </div>
+    </div>
+  )
+  return (
+    <div style={{ background: color.bg['grouped-default'], borderRadius: 12, padding: 16 }}>
+      <dl style={{ margin: '0 0 12px', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px' }}>
+        {summary.map(([label, value]) => (
+          <div key={label} style={{ display: 'contents' }}>
+            <dt style={{ ...textStyle('12/body/bold'), color: color.text['sub-a'] }}>{label}</dt>
+            <dd style={{ ...textStyle('12/body/med'), color: color.text.primary, margin: 0, overflowWrap: 'anywhere' }}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div style={{ maxWidth: pc ? undefined : MOBILE_PREVIEW_WIDTH, margin: '0 auto' }}>{screen}</div>
     </div>
   )
 }
@@ -291,6 +358,7 @@ export default function StarCommentsSettings() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
+  const [previewDevice, setPreviewDevice] = useState<PreviewDevice>('mobile')
   const local = isLocalPreview()
 
   const load = useCallback(() => {
@@ -368,15 +436,18 @@ export default function StarCommentsSettings() {
         </p>
       )}
 
-      <div className="scs-layout">
+      <div className={previewDevice === 'pc' ? 'scs-layout scs-layout--pc' : 'scs-layout'}>
       {/* 왼쪽: 미리보기 */}
       <aside className="scs-preview">
         <section style={cardStyle}>
-          <h2 style={{ ...textStyle('16/title/bold'), color: color.text.primary, margin: '0 0 4px' }}>미리보기</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
+            <h2 style={{ ...textStyle('16/title/bold'), color: color.text.primary, margin: 0 }}>미리보기</h2>
+            <DeviceToggle value={previewDevice} onChange={setPreviewDevice} />
+          </div>
           <p style={{ ...textStyle('13/body/reg'), color: color.text.secondary, margin: '0 0 12px' }}>
             문구 · 스타 순서 · 숨김 · 링크 문구가 이렇게 보여요. 실제 댓글이 아닌 예시예요.
           </p>
-          <Preview draft={clean} />
+          <Preview draft={clean} device={previewDevice} />
         </section>
       </aside>
 
