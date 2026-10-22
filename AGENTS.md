@@ -6,7 +6,7 @@
 b.stage 서드파티 템플릿 프로젝트. React 컴포넌트를 작성하면 SDK가 Web Component로 빌드하고, 빌드 산출물이 b.stage 플랫폼에서 로드되어 실행된다.
 
 - **Space**: ariana-test
-- **레포**: `ariana-test-custom-templates-sandbox`
+- **레포**: `ariana-test-admin-templates-sandbox`
 
 ## SDK 문서
 

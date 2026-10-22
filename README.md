@@ -1,4 +1,4 @@
-# ariana-test-custom-templates-sandbox
+# ariana-test-admin-templates-sandbox
 
 b.stage 서드파티 템플릿 프로젝트
 
