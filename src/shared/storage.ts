@@ -31,6 +31,16 @@ export interface StoredConfig {
   exists: boolean
 }
 
+// custom-template-data는 JSON 키에 점(.)·$가 있으면 HTTP 500을 돌려준다(2026-10-22 실측).
+// 저장 직전에 걸러서, 같은 실수가 다시 생기면 500 대신 어느 키가 문제인지 알려 준다.
+function assertSafeKeys(value: unknown, path = ''): void {
+  if (!value || typeof value !== 'object') return
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (/[.$]/.test(key)) throw new Error(`설정 키 "${path}${key}"에 점(.) 또는 $가 있어 저장할 수 없어요 (개발 오류)`)
+    assertSafeKeys(child, `${path}${key}.`)
+  }
+}
+
 function isNotFound(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { status?: number }).status === 404
 }
@@ -63,6 +73,7 @@ export async function writeStoredConfig(
 ): Promise<{ saved: boolean; conflict: boolean }> {
   // 서버에 보내기 전에 한 번 더 검증·정리한다(모르는 필드는 버려진다).
   const clean = parseConfig(next)
+  assertSafeKeys(clean)
 
   if (isLocalPreview()) {
     window.localStorage.setItem(LOCAL_CONFIG_STORAGE_KEY, JSON.stringify(clean))

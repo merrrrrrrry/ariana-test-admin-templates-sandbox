@@ -20,11 +20,13 @@ export const LOCAL_CONFIG_STORAGE_KEY = 'merry-star-comments-config-local'
 // 'page' = 독립 페이지(/star-story-comments)
 // 슬롯 id는 스테이지 전체에서 한 레포만 쓸 수 있다. 이 스테이지에서 다른 레포가 이미 쓰는 자리
 // (contents-section:before · curation:after · community-board.feed:before 등)는 넣지 않았다.
+// ※ key는 점(.)·콜론(:)이 없는 짧은 이름이어야 한다 — custom-template-data는 JSON 키에 점이 있으면
+//   저장 때 HTTP 500을 돌려준다(2026-10-22 실측). 슬롯 id를 그대로 키로 쓰면 안 된다.
 export const PLACEMENTS = [
   { key: 'page', label: '독립 페이지 (/star-story-comments)' },
-  { key: 'user.contents-home.contents-section:after', label: '콘텐츠 탭 · 섹션 묶음 아래' },
-  { key: 'user.contents-curation.list:before', label: '콘텐츠 큐레이션 목록 페이지 · 위' },
-  { key: 'user.contents-section.list:before', label: '콘텐츠 섹션 목록(전체보기) 페이지 · 위' },
+  { key: 'contents-after', label: '콘텐츠 탭 · 섹션 묶음 아래' },
+  { key: 'curation-list', label: '콘텐츠 큐레이션 목록 페이지 · 위' },
+  { key: 'section-list', label: '콘텐츠 섹션 목록(전체보기) 페이지 · 위' },
 ] as const
 
 export type PlacementKey = (typeof PLACEMENTS)[number]['key']
@@ -69,9 +71,9 @@ export const DEFAULT_CONFIG: StarCommentsConfig = {
   // 어드민에서 체크하기 전에는 팬 화면이 달라지지 않는다.
   placements: {
     page: true,
-    'user.contents-home.contents-section:after': true,
-    'user.contents-curation.list:before': false,
-    'user.contents-section.list:before': false,
+    'contents-after': true,
+    'curation-list': false,
+    'section-list': false,
   },
   title: '스타의 댓글 모아보기',
   subtitle: '스타가 남긴 댓글을 한곳에서 확인해보세요',
@@ -176,9 +178,9 @@ export function parseConfig(raw: unknown): StarCommentsConfig {
 }
 
 /** 지금 이 자리에서 보여줘야 하는지: 전체 스위치 · 자리별 스위치 · 노출 기간. */
-export function isVisible(config: StarCommentsConfig, placement: string, now = Date.now()): boolean {
+export function isVisible(config: StarCommentsConfig, placement: PlacementKey, now = Date.now()): boolean {
   if (!config.enabled) return false
-  if (placement in config.placements && !config.placements[placement as PlacementKey]) return false
+  if (!config.placements[placement]) return false
   if (config.startDate && now < Date.parse(`${config.startDate}T00:00:00+09:00`)) return false
   if (config.endDate && now > Date.parse(`${config.endDate}T23:59:59+09:00`)) return false
   return true
