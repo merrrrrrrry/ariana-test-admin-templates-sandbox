@@ -32,6 +32,18 @@ export const PLACEMENTS = [
 export type PlacementKey = (typeof PLACEMENTS)[number]['key']
 export type SortKey = 'latest' | 'reactions'
 
+// 누구에게 보여줄지. membership·pop은 가입/구독 여부를 알려 주는 유저 API가 아직 없어서(허브 VOC #85, C등급)
+// 지금은 고를 수 없다 — 어드민에 자리만 두고 available:false로 막아 둔다. API가 열리면 available을 true로 바꾸고
+// 유저 화면(StarCommentsFeed의 isAudienceAllowed)에 판정을 붙인다.
+export const AUDIENCES = [
+  { key: 'all', label: '전체 공개', available: true },
+  { key: 'login', label: '로그인한 팬만', available: true },
+  { key: 'membership', label: '멤버십 가입자만', available: false },
+  { key: 'pop', label: 'POP 구독자만', available: false },
+] as const
+
+export type AudienceKey = (typeof AUDIENCES)[number]['key']
+
 export interface StarCommentsConfig {
   version: 1
   /** 전체 노출 스위치 */
@@ -39,6 +51,8 @@ export interface StarCommentsConfig {
   /** 노출 기간(한국 시간 기준 날짜, YYYY-MM-DD). 비우면 제한 없음 */
   startDate: string | null
   endDate: string | null
+  /** 누구에게 보여줄지 (지금은 all · login만 동작) */
+  audience: AudienceKey
   /** 자리별 노출 */
   placements: Record<PlacementKey, boolean>
   title: string
@@ -67,6 +81,7 @@ export const DEFAULT_CONFIG: StarCommentsConfig = {
   enabled: true,
   startDate: null,
   endDate: null,
+  audience: 'all',
   // 기존에 이미 보이던 두 자리만 켜 둔다. 새로 만든 자리는 꺼진 채로 시작해서, 포털에 위젯을 게시해도
   // 어드민에서 체크하기 전에는 팬 화면이 달라지지 않는다.
   placements: {
@@ -153,6 +168,8 @@ export function parseConfig(raw: unknown): StarCommentsConfig {
     enabled: bool(r.enabled, d.enabled),
     startDate: date(r.startDate),
     endDate: date(r.endDate),
+    // 아직 쓸 수 없는 대상(membership · pop)이나 모르는 값은 전체 공개로 본다.
+    audience: AUDIENCES.find((a) => a.key === r.audience && a.available)?.key ?? d.audience,
     placements,
     title: text(r.title, d.title, LIMITS.title),
     subtitle: typeof r.subtitle === 'string' ? r.subtitle.trim().slice(0, LIMITS.subtitle) : d.subtitle,
