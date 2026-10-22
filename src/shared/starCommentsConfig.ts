@@ -31,6 +31,11 @@ export const PLACEMENTS = [
   { key: 'contents-after', label: '콘텐츠 탭 · 섹션 묶음 아래' },
   { key: 'curation-list', label: '콘텐츠 큐레이션 목록 페이지 · 위' },
   { key: 'section-list', label: '콘텐츠 섹션 목록(전체보기) 페이지 · 위' },
+  { key: 'contents-detail-after', label: '콘텐츠 상세 페이지 · 본문 아래' },
+  { key: 'contents-detail-comments', label: '콘텐츠 상세 페이지 · 댓글 영역 위' },
+  { key: 'lounge-story', label: '라운지 스토리 탭 · 피드 위 (그 라운지의 스토리만)' },
+  { key: 'lounge-contents', label: '라운지 콘텐츠 탭 · 섹션 위' },
+  { key: 'lounge-community', label: '라운지 커뮤니티 탭 · 게시판 위' },
 ] as const
 
 export type PlacementKey = (typeof PLACEMENTS)[number]['key']
@@ -106,6 +111,11 @@ export const DEFAULT_CONFIG: StarCommentsConfig = {
     'contents-after': true,
     'curation-list': false,
     'section-list': false,
+    'contents-detail-after': false,
+    'contents-detail-comments': false,
+    'lounge-story': false,
+    'lounge-contents': false,
+    'lounge-community': false,
   },
   title: '스타의 댓글 모아보기',
   subtitle: '스타가 남긴 댓글을 한곳에서 확인해보세요',
