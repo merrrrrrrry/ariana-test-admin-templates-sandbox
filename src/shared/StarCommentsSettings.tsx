@@ -2,13 +2,26 @@
 import { color, shadow, textStyle } from '@bstage-sdk/design/admin'
 import { isLocalPreview, readStoredConfig, writeStoredConfig } from './storage'
 import {
+  AUDIENCES,
   DEFAULT_CONFIG,
   LIMITS,
   PLACEMENTS,
   parseConfig,
+  type AudienceKey,
   type PlacementKey,
   type StarCommentsConfig,
 } from './starCommentsConfig'
+
+// 왼쪽 미리보기 · 오른쪽 설정 2단 레이아웃. 좁은 화면(960px 이하)에서는 미리보기가 위로 올라가 한 줄로 쌓인다.
+// Shadow DOM 안이라 <style>로 넣는다.
+const LAYOUT_CSS = `
+.scs-layout { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.scs-preview { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
+@media (max-width: 960px) {
+  .scs-layout { grid-template-columns: minmax(0, 1fr); }
+  .scs-preview { position: static; max-height: none; overflow: visible; }
+}
+`
 
 // ────────────────────────────────────────────────────────────────────────
 // 스타 댓글 모아보기 — 어드민 설정 화면
@@ -216,8 +229,25 @@ function Preview({ draft }: { draft: StarCommentsConfig }) {
     background: active ? color.text.primary : color.bg['grouped-default'],
     color: active ? color.bg.base : color.text.primary,
   })
+  const audience = AUDIENCES.find((a) => a.key === draft.audience)
+  const placementsOn = PLACEMENTS.filter((p) => draft.placements[p.key]).map((p) => p.label)
+  const period = draft.startDate || draft.endDate ? `${draft.startDate ?? '처음'} ~ ${draft.endDate ?? '계속'}` : '항상'
+  const summary: [string, string][] = [
+    ['상태', draft.enabled ? '노출 중' : '꺼짐 — 팬 화면에 안 보여요'],
+    ['기간', period],
+    ['대상', audience?.label ?? '전체 공개'],
+    ['자리', placementsOn.length ? placementsOn.join(' · ') : '켜진 자리가 없어요'],
+  ]
   return (
     <div style={{ background: color.bg['grouped-default'], borderRadius: 12, padding: 16 }}>
+      <dl style={{ margin: '0 0 12px', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px' }}>
+        {summary.map(([label, value]) => (
+          <div key={label} style={{ display: 'contents' }}>
+            <dt style={{ ...textStyle('12/body/bold'), color: color.text['sub-a'] }}>{label}</dt>
+            <dd style={{ ...textStyle('12/body/med'), color: color.text.primary, margin: 0, overflowWrap: 'anywhere' }}>{value}</dd>
+          </div>
+        ))}
+      </dl>
       <div style={{ background: color.bg.base, borderRadius: 12, padding: 16 }}>
         <div style={{ ...textStyle('16/title/bold'), color: color.text.primary }}>{draft.title}</div>
         {draft.subtitle && <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary, marginTop: 2 }}>{draft.subtitle}</div>}
@@ -232,7 +262,7 @@ function Preview({ draft }: { draft: StarCommentsConfig }) {
         {cards.length === 0 ? (
           <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary }}>{draft.emptyText}</div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 10 }}>
             {cards.map((c) => (
               <div key={c.nickname} style={{ border: `1px solid ${color.border['divider-a']}`, borderRadius: 10, padding: 12, boxShadow: shadow['default-small'] }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -305,7 +335,7 @@ export default function StarCommentsSettings() {
     }
   }
 
-  const shell: CSSProperties = { maxWidth: 880, margin: '0 auto', padding: '24px 20px 120px', boxSizing: 'border-box' }
+  const shell: CSSProperties = { maxWidth: 1240, margin: '0 auto', padding: '24px 20px 120px', boxSizing: 'border-box' }
 
   if (loadError) {
     return (
@@ -327,6 +357,7 @@ export default function StarCommentsSettings() {
 
   return (
     <div style={shell}>
+      <style>{LAYOUT_CSS}</style>
       <h1 style={{ ...textStyle('20/title/bold'), color: color.text.primary, margin: '0 0 4px' }}>스타 댓글 모아보기 설정</h1>
       <p style={{ ...textStyle('13/body/reg'), color: color.text.secondary, margin: '0 0 16px' }}>
         팬 화면의 "스타 댓글 모아보기"를 코드 수정 없이 운영해요. 저장하면 팬 화면에는 최대 10분 뒤에 반영돼요.
@@ -337,8 +368,59 @@ export default function StarCommentsSettings() {
         </p>
       )}
 
-      <Section title="노출" hint="언제, 어디에 보여줄지 정해요.">
+      <div className="scs-layout">
+      {/* 왼쪽: 미리보기 */}
+      <aside className="scs-preview">
+        <section style={cardStyle}>
+          <h2 style={{ ...textStyle('16/title/bold'), color: color.text.primary, margin: '0 0 4px' }}>미리보기</h2>
+          <p style={{ ...textStyle('13/body/reg'), color: color.text.secondary, margin: '0 0 12px' }}>
+            문구 · 스타 순서 · 숨김 · 링크 문구가 이렇게 보여요. 실제 댓글이 아닌 예시예요.
+          </p>
+          <Preview draft={clean} />
+        </section>
+      </aside>
+
+      {/* 오른쪽: 설정 */}
+      <div style={{ minWidth: 0 }}>
+      <Section title="노출" hint="언제, 어디에, 누구에게 보여줄지 정해요.">
         <Check checked={draft.enabled} onChange={(enabled) => patch({ enabled })} label="팬 화면에 노출" hint="끄면 모든 자리에서 사라져요." />
+        <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '14px 0 2px' }}>누구에게 보여줄까요</div>
+        {AUDIENCES.map(({ key, label, available }) => (
+          <label
+            key={key}
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              padding: '6px 0',
+              cursor: available ? 'pointer' : 'not-allowed',
+              opacity: available ? 1 : 0.55,
+            }}
+          >
+            <input
+              type="radio"
+              name="star-comments-audience"
+              checked={draft.audience === key}
+              disabled={!available}
+              onChange={() => patch({ audience: key as AudienceKey })}
+              style={{ width: 18, height: 18, marginTop: 2, cursor: 'inherit' }}
+            />
+            <span>
+              <span style={{ ...textStyle('14/title/med'), color: color.text.primary }}>{label}</span>
+              {!available && (
+                <span style={{ ...textStyle('12/body/med'), color: color.text.red, marginLeft: 8 }}>지금은 사용할 수 없어요</span>
+              )}
+              {key === 'login' && (
+                <span style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], display: 'block' }}>
+                  로그인하지 않은 방문자에게는 위젯이 안 보여요. (화면에서만 가리는 것이고 댓글 자체를 숨기는 보안 장치는 아니에요.)
+                </span>
+              )}
+            </span>
+          </label>
+        ))}
+        <p style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], margin: '4px 0 12px' }}>
+          멤버십 가입자·POP 구독자는 가입 여부를 알려 주는 플랫폼 API가 아직 없어서 선택할 수 없어요. API가 열리면 연결할 수 있게 자리만 만들어 두었어요.
+        </p>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '12px 0 4px' }}>
           <div style={{ flex: '1 1 180px' }}>
             <Field label="노출 시작일" hint="비우면 바로 노출 (한국 시간)">
@@ -460,9 +542,8 @@ export default function StarCommentsSettings() {
         </div>
       </Section>
 
-      <Section title="미리보기" hint="문구 · 스타 순서 · 숨김 · 링크 문구가 이렇게 보여요. 실제 댓글이 아닌 예시예요.">
-        <Preview draft={clean} />
-      </Section>
+      </div>
+      </div>
 
       {/* 저장 바 */}
       <div
