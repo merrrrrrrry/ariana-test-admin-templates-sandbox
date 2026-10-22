@@ -18,12 +18,13 @@ export const LOCAL_CONFIG_STORAGE_KEY = 'merry-star-comments-config-local'
 
 // 위젯이 붙을 수 있는 자리. 값이 false인 자리의 위젯은 아무것도 그리지 않는다.
 // 'page' = 독립 페이지(/star-story-comments)
+// 슬롯 id는 스테이지 전체에서 한 레포만 쓸 수 있다. 이 스테이지에서 다른 레포가 이미 쓰는 자리
+// (contents-section:before · curation:after · community-board.feed:before 등)는 넣지 않았다.
 export const PLACEMENTS = [
   { key: 'page', label: '독립 페이지 (/star-story-comments)' },
   { key: 'user.contents-home.contents-section:after', label: '콘텐츠 탭 · 섹션 묶음 아래' },
-  { key: 'user.contents-home.contents-section:before', label: '콘텐츠 탭 · 섹션 묶음 위' },
-  { key: 'user.contents-home.curation:after', label: '콘텐츠 탭 · 큐레이션 아래' },
-  { key: 'user.community-board.feed:before', label: '커뮤니티 게시판 · 피드 위 (그 게시판 댓글만)' },
+  { key: 'user.contents-curation.list:before', label: '콘텐츠 큐레이션 목록 페이지 · 위' },
+  { key: 'user.contents-section.list:before', label: '콘텐츠 섹션 목록(전체보기) 페이지 · 위' },
 ] as const
 
 export type PlacementKey = (typeof PLACEMENTS)[number]['key']
@@ -69,9 +70,8 @@ export const DEFAULT_CONFIG: StarCommentsConfig = {
   placements: {
     page: true,
     'user.contents-home.contents-section:after': true,
-    'user.contents-home.contents-section:before': false,
-    'user.contents-home.curation:after': false,
-    'user.community-board.feed:before': false,
+    'user.contents-curation.list:before': false,
+    'user.contents-section.list:before': false,
   },
   title: '스타의 댓글 모아보기',
   subtitle: '스타가 남긴 댓글을 한곳에서 확인해보세요',
