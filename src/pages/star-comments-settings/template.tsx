@@ -1,32 +1,18 @@
 import { createTemplate } from '@bstage-sdk/react'
-// import { useNavigation, useBstageContext } from '@bstage-sdk/react'
-// import { client } from '../../shared/client'
-// CSS 파일을 쓰려면 ?inline으로 문자열을 가져와 아래 styles에 넘긴다.
-// 부수효과 import(`import './x.css'`)는 배포 산출물에서 사라진다.
-// import css from '../../index.css?inline'
+import { color } from '@bstage-sdk/design/admin'
+import StarCommentsSettings from '../../shared/StarCommentsSettings'
 
-export default function StarCommentsSettingsTemplate() {
-  // ── 플랫폼 네비게이션 ──
-  // const { navigate, goBack, openExternal } = useNavigation()
-  // navigate('/profile', { userId: '123' })
-
-  // ── PlatformBridge 직접 접근 ──
-  // const { bridge } = useBstageContext()
-  // bridge.emit('toast', { message: '저장 완료', variant: 'success' })
-
-  // ── API 호출 (shared/client.ts의 인스턴스를 직접 import해 사용) ──
-  // useEffect(() => {
-  //   client.get('/content/v1/boards').then(res => console.log(res.data))
-  // }, [])
-
+// 어드민 설정 화면 — 팬 화면(유저 레포 ariana-test-custom-templates-sandbox)의 "스타 댓글 모아보기"를
+// 코드 수정 없이 운영한다. 저장은 custom-template-data(displayKey merry-star-comments).
+// 메뉴 위치는 코드가 아니라 포털 페이지 설정의 GNB 메뉴에서 정한다.
+export default function StarCommentsSettingsPage() {
   return (
-    <div style={{ padding: 24, fontFamily: 'system-ui, sans-serif' }}>
-      <h1>Hello, star-comments-settings!</h1>
+    <div style={{ minHeight: '100vh', background: color.bg['grouped-default'] }}>
+      <StarCommentsSettings />
     </div>
   )
 }
 
-createTemplate(StarCommentsSettingsTemplate, {
+createTemplate(StarCommentsSettingsPage, {
   name: 'star-comments-settings',
-  // styles: css,   // Shadow DOM에 주입 (위 ?inline import와 함께 사용)
 })
