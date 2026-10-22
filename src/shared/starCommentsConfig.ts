@@ -53,6 +53,8 @@ export interface StarCommentsConfig {
   version: 1
   /** 전체 노출 스위치 */
   enabled: boolean
+  /** 팬 화면 제목 옆의 켜기/끄기 스위치를 보여줄지. 숨기면 방문자가 예전에 꺼 둔 상태도 무시하고 항상 보여 준다 */
+  showToggle: boolean
   /** 노출 기간(한국 시간 기준 날짜, YYYY-MM-DD). 비우면 제한 없음 */
   startDate: string | null
   endDate: string | null
@@ -93,6 +95,7 @@ export interface StarCommentsConfig {
 export const DEFAULT_CONFIG: StarCommentsConfig = {
   version: 1,
   enabled: true,
+  showToggle: true,
   startDate: null,
   endDate: null,
   audience: 'all',
@@ -194,6 +197,7 @@ export function parseConfig(raw: unknown): StarCommentsConfig {
   return {
     version: 1,
     enabled: bool(r.enabled, d.enabled),
+    showToggle: bool(r.showToggle, d.showToggle),
     startDate: date(r.startDate),
     endDate: date(r.endDate),
     // 아직 쓸 수 없는 대상(membership · pop)이나 모르는 값은 전체 공개로 본다.

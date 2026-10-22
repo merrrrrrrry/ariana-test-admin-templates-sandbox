@@ -312,13 +312,24 @@ function Preview({ draft, device }: { draft: StarCommentsConfig; device: Preview
     ['상태', draft.enabled ? '노출 중' : '꺼짐 — 팬 화면에 안 보여요'],
     ['기간', period],
     ['대상', audience?.label ?? '전체 공개'],
+    ['스위치', draft.showToggle ? '보여주기' : '숨기기'],
     ['자리', placementsOn.length ? placementsOn.join(' · ') : '켜진 자리가 없어요'],
     ['기준', curationSummary(draft)],
   ]
   const pc = device === 'pc'
   const screen = (
     <div style={{ background: color.bg.base, borderRadius: 12, padding: pc ? 24 : 16, border: `1px solid ${color.border['divider-a']}` }}>
-        <div style={{ ...textStyle('16/title/bold'), color: color.text.primary }}>{draft.title}</div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+          <div style={{ ...textStyle('16/title/bold'), color: color.text.primary }}>{draft.title}</div>
+          {draft.showToggle && (
+            <span
+              aria-label="켜기/끄기 스위치(미리보기)"
+              style={{ flexShrink: 0, width: 36, height: 20, padding: 2, boxSizing: 'border-box', borderRadius: 999, background: color.text.primary, display: 'flex', justifyContent: 'flex-end' }}
+            >
+              <span style={{ width: 16, height: 16, borderRadius: 999, background: color.bg.base }} />
+            </span>
+          )}
+        </div>
         {draft.subtitle && <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary, marginTop: 2 }}>{draft.subtitle}</div>}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '12px 0' }}>
           <span style={chip(true)}>전체 스타</span>
@@ -502,6 +513,27 @@ export default function StarCommentsSettings() {
       <div style={{ minWidth: 0 }}>
       <Section title="노출" hint="언제, 어디에, 누구에게 보여줄지 정해요.">
         <Check checked={draft.enabled} onChange={(enabled) => patch({ enabled })} label="팬 화면에 노출" hint="끄면 모든 자리에서 사라져요." />
+        <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '14px 0 2px' }}>방문자용 켜기/끄기 스위치</div>
+        {(
+          [
+            [true, '보여주기', '제목 옆 스위치로 방문자가 이 목록을 접고 펼 수 있어요.'],
+            [false, '숨기기', '스위치 없이 항상 목록을 보여줘요. 예전에 스위치를 꺼 둔 방문자에게도 다시 보여요.'],
+          ] as const
+        ).map(([value, label, hint]) => (
+          <label key={String(value)} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 0', cursor: 'pointer' }}>
+            <input
+              type="radio"
+              name="scs-show-toggle"
+              checked={draft.showToggle === value}
+              onChange={() => patch({ showToggle: value })}
+              style={{ width: 18, height: 18, marginTop: 2, accentColor: 'currentColor', cursor: 'pointer' }}
+            />
+            <span>
+              <span style={{ ...textStyle('14/title/med'), color: color.text.primary, display: 'block' }}>{label}</span>
+              <span style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], display: 'block' }}>{hint}</span>
+            </span>
+          </label>
+        ))}
         <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '14px 0 2px' }}>누구에게 보여줄까요</div>
         {AUDIENCES.map(({ key, label, available }) => (
           <label
