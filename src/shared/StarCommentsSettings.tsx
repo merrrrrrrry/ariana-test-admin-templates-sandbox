@@ -2,6 +2,7 @@
 import { color, shadow, textStyle } from '@bstage-sdk/design/admin'
 import { isLocalPreview, readStoredConfig, writeStoredConfig } from './storage'
 import {
+  APPLY_WAIT_MS,
   AUDIENCES,
   DEFAULT_CONFIG,
   LIMITS,
@@ -109,15 +110,17 @@ function ListEditor({
   onChange,
   placeholder,
   ordered = false,
+  maxLength = LIMITS.listItemLength,
 }: {
   values: string[]
   onChange: (next: string[]) => void
   placeholder: string
   ordered?: boolean
+  maxLength?: number
 }) {
   const [draft, setDraft] = useState('')
   const add = () => {
-    const word = draft.trim().slice(0, LIMITS.listItemLength)
+    const word = draft.trim().slice(0, maxLength)
     if (!word || values.includes(word) || values.length >= LIMITS.listItems) return
     onChange([...values, word])
     setDraft('')
@@ -145,7 +148,7 @@ function ListEditor({
       <div style={{ display: 'flex', gap: 8 }}>
         <input
           value={draft}
-          maxLength={LIMITS.listItemLength}
+          maxLength={maxLength}
           placeholder={placeholder}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -212,6 +215,16 @@ const SAMPLE_COMMENTS = [
   { nickname: 'Gini', body: '저는 인도 사람인데요 여기서 뭐하고 있을까요', kind: 'story' as const, title: '피아니스트가 된 고은혁?', time: '1시간 전' },
   { nickname: '애뤼애나', body: '팬 여러분 감사해요!', kind: 'community' as const, title: 'To. 애뤼애나', time: '방금 전' },
 ]
+
+// 어떤 댓글을 모으는지 한 줄 요약(미리보기 위쪽에 보여 준다).
+function curationSummary(draft: StarCommentsConfig): string {
+  const parts: string[] = []
+  if (draft.tagFilter.enabled) parts.push(`태그 ${draft.tagFilter.tags.map((t) => `#${t}`).join(' ')}`)
+  else parts.push('전체 글')
+  if (draft.perPostLimit > 0) parts.push(`글당 ${draft.perPostLimit}개(${draft.perPostOrder === 'reactions' ? '반응 많은 순' : '최신'})`)
+  if (draft.minReactions > 0) parts.push(`반응 ${draft.minReactions}개 이상`)
+  return parts.join(' · ')
+}
 
 type PreviewDevice = 'mobile' | 'pc'
 // 모바일은 좁은 폭(360px)에 1열, PC는 칸을 꽉 채워 2열로 보여 준다.
@@ -300,6 +313,7 @@ function Preview({ draft, device }: { draft: StarCommentsConfig; device: Preview
     ['기간', period],
     ['대상', audience?.label ?? '전체 공개'],
     ['자리', placementsOn.length ? placementsOn.join(' · ') : '켜진 자리가 없어요'],
+    ['기준', curationSummary(draft)],
   ]
   const pc = device === 'pc'
   const screen = (
@@ -350,7 +364,40 @@ function Preview({ draft, device }: { draft: StarCommentsConfig; device: Preview
   )
 }
 
-type Status = { kind: 'idle' } | { kind: 'saved' } | { kind: 'error'; message: string } | { kind: 'conflict' }
+type Status = { kind: 'idle' } | { kind: 'saved'; at: number } | { kind: 'error'; message: string } | { kind: 'conflict' }
+
+// 저장 뒤 팬 화면에 닿을 때까지의 로딩. 어드민은 팬 쪽 캐시를 직접 볼 수 없어서
+// 저장 시각부터 APPLY_WAIT_MS(팬 화면이 설정을 새로 읽는 주기 + 여유)를 기다린 뒤 "반영 완료"로 바뀐다.
+function ApplyProgress({ savedAt }: { savedAt: number }) {
+  const [now, setNow] = useState(() => Date.now())
+  const elapsed = now - savedAt
+  const done = elapsed >= APPLY_WAIT_MS
+  useEffect(() => {
+    if (done) return
+    const timer = window.setInterval(() => setNow(Date.now()), 500)
+    return () => window.clearInterval(timer)
+  }, [done])
+  const ratio = Math.min(1, Math.max(0, elapsed / APPLY_WAIT_MS))
+  const remain = Math.max(1, Math.ceil((APPLY_WAIT_MS - elapsed) / 1000))
+  return (
+    <span role="status" aria-live="polite" style={{ display: 'block' }}>
+      <span style={{ display: 'block', color: done ? color.text.primary : color.text.secondary }}>
+        {done ? '✓ 반영 완료 — 이제 팬 화면에서 확인할 수 있어요.' : `저장했어요. 팬 화면에 반영하는 중… 약 ${remain}초 남았어요.`}
+      </span>
+      <span style={{ display: 'block', height: 4, borderRadius: 2, background: color.bg['grouped-default'], marginTop: 6, overflow: 'hidden' }}>
+        <span
+          style={{
+            display: 'block',
+            height: '100%',
+            width: `${ratio * 100}%`,
+            background: color.surface['form-bstage'],
+            transition: 'width 0.5s linear',
+          }}
+        />
+      </span>
+    </span>
+  )
+}
 
 export default function StarCommentsSettings() {
   const [loaded, setLoaded] = useState<StarCommentsConfig | null>(null)
@@ -394,7 +441,7 @@ export default function StarCommentsSettings() {
       } else {
         setLoaded(clean)
         setDraft(clean)
-        setStatus({ kind: 'saved' })
+        setStatus({ kind: 'saved', at: Date.now() })
       }
     } catch (err) {
       setStatus({ kind: 'error', message: err instanceof Error ? err.message : '저장하지 못했어요' })
@@ -428,7 +475,7 @@ export default function StarCommentsSettings() {
       <style>{LAYOUT_CSS}</style>
       <h1 style={{ ...textStyle('20/title/bold'), color: color.text.primary, margin: '0 0 4px' }}>스타 댓글 모아보기 설정</h1>
       <p style={{ ...textStyle('13/body/reg'), color: color.text.secondary, margin: '0 0 16px' }}>
-        팬 화면의 "스타 댓글 모아보기"를 코드 수정 없이 운영해요. 저장하면 팬 화면에는 최대 10분 뒤에 반영돼요.
+        팬 화면의 "스타 댓글 모아보기"를 코드 수정 없이 운영해요. 저장하면 1분 안에 팬 화면에 반영되고, 반영이 끝나면 알려 드려요.
       </p>
       {local && (
         <p style={{ ...textStyle('13/body/med'), color: color.text.yellow, margin: '0 0 16px' }}>
@@ -569,19 +616,93 @@ export default function StarCommentsSettings() {
         <ListEditor values={draft.hiddenStars} onChange={(hiddenStars) => patch({ hiddenStars })} placeholder="스타 닉네임" />
       </Section>
 
-      <Section title="댓글 큐레이션" hint="댓글 내용에 들어 있는 글자로 골라요. 대소문자는 구분하지 않아요.">
-        <div style={{ ...textStyle('13/body/med'), color: color.text.primary, marginBottom: 6 }}>맨 위에 고정할 댓글</div>
+      <Section title="댓글 큐레이션" hint="어떤 글의 스타 댓글을 어떻게 골라 보여줄지 정해요.">
+        <Check
+          checked={draft.tagFilter.enabled}
+          onChange={(enabled) => patch({ tagFilter: { ...draft.tagFilter, enabled } })}
+          label="태그가 붙은 글의 댓글만 보여주기"
+          hint="어드민에서 글에 붙인 태그로 골라요. 콘텐츠 · 스타 스토리 글에만 적용되고, 켜면 태그가 없는 커뮤니티 댓글은 빠져요."
+        />
+        <div style={{ margin: '8px 0 0' }}>
+          <ListEditor
+            values={draft.tagFilter.tags}
+            onChange={(tags) => patch({ tagFilter: { ...draft.tagFilter, tags } })}
+            placeholder="태그 이름 (예: 스타픽, # 없이)"
+          />
+          <p style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], margin: '6px 0 0' }}>
+            태그를 하나도 넣지 않으면 꺼진 것으로 봐요. 태그가 여러 개면 그중 하나라도 붙은 글을 보여줘요.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '20px 0 0' }}>
+          <div style={{ flex: '1 1 200px' }}>
+            <Field label="글 하나당 보여줄 댓글" hint="한 글에 스타 댓글이 여러 개일 때 대표만 남겨요.">
+              <select
+                style={inputStyle}
+                value={draft.perPostLimit}
+                onChange={(e) => patch({ perPostLimit: Number(e.target.value) })}
+              >
+                <option value={0}>제한 없음</option>
+                {[1, 2, 3, 5].map((n) => (
+                  <option key={n} value={n}>
+                    최대 {n}개
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <div style={{ flex: '1 1 200px' }}>
+            <Field label="고르는 기준" hint="최대 개수가 정해졌을 때만 쓰여요.">
+              <select
+                style={inputStyle}
+                value={draft.perPostOrder}
+                disabled={draft.perPostLimit === 0}
+                onChange={(e) => patch({ perPostOrder: e.target.value === 'reactions' ? 'reactions' : 'latest' })}
+              >
+                <option value="latest">최신 댓글</option>
+                <option value="reactions">반응 많은 댓글</option>
+              </select>
+            </Field>
+          </div>
+          <div style={{ flex: '1 1 200px' }}>
+            <Field label="최소 반응 수" hint="0이면 제한 없음. 스타 답글은 반응 수를 몰라 0으로 봐요.">
+              <input
+                type="number"
+                style={inputStyle}
+                min={0}
+                max={LIMITS.minReactionsMax}
+                value={draft.minReactions}
+                onChange={(e) => patch({ minReactions: Math.max(0, Math.round(Number(e.target.value)) || 0) })}
+              />
+            </Field>
+          </div>
+        </div>
+
+        <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '8px 0 6px' }}>맨 위에 고정할 댓글</div>
         <ListEditor
           values={draft.pinnedKeywords}
           onChange={(pinnedKeywords) => patch({ pinnedKeywords })}
           placeholder="댓글에 들어 있는 글자 (예: 이벤트 당첨)"
         />
-        <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '16px 0 6px' }}>숨길 댓글</div>
+        <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '16px 0 6px' }}>금칙어 (이 글자가 들어 있으면 숨겨요)</div>
         <ListEditor
           values={draft.hiddenKeywords}
           onChange={(hiddenKeywords) => patch({ hiddenKeywords })}
           placeholder="댓글에 들어 있는 글자 (예: 광고)"
         />
+        <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '16px 0 2px' }}>숨길 댓글 ID</div>
+        <p style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], margin: '0 0 6px' }}>
+          태그가 붙은 글 안에서 딱 한두 개만 빼고 싶을 때 써요. 댓글 ID는 팬 화면 주소 끝에 ?curate=1 을 붙이면 카드마다 보이는 "ID 복사" 버튼으로 가져와요.
+        </p>
+        <ListEditor
+          values={draft.hiddenCommentIds}
+          onChange={(hiddenCommentIds) => patch({ hiddenCommentIds })}
+          placeholder="댓글 ID"
+          maxLength={LIMITS.commentIdLength}
+        />
+        <p style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], margin: '12px 0 0' }}>
+          글자로 찾는 항목은 대소문자를 구분하지 않아요.
+        </p>
       </Section>
 
       <Section title="목록">
@@ -634,7 +755,7 @@ export default function StarCommentsSettings() {
         }}
       >
         <span style={{ ...textStyle('13/body/med'), color: status.kind === 'error' || status.kind === 'conflict' ? color.text.red : color.text.secondary, flex: 1, minWidth: 180 }}>
-          {status.kind === 'saved' && '저장했어요. 팬 화면에는 최대 10분 뒤에 반영돼요.'}
+          {status.kind === 'saved' && <ApplyProgress savedAt={status.at} />}
           {status.kind === 'error' && `저장하지 못했어요: ${status.message}`}
           {status.kind === 'conflict' && '다른 운영자가 먼저 설정을 바꿨어요. 그래도 내 내용으로 저장할까요?'}
           {status.kind === 'idle' && (dirty ? '저장하지 않은 변경이 있어요.' : '변경 사항이 없어요.')}

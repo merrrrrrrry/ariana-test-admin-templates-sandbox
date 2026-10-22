@@ -13,6 +13,10 @@
 // ────────────────────────────────────────────────────────────────────────
 
 export const CONFIG_KEY = 'merry-star-comments'
+// 팬 화면은 설정을 읽을 때 주소 끝에 1분마다 바뀌는 값을 붙여 게이트웨이 캐시를 피한다.
+// 어드민은 저장 뒤 APPLY_WAIT_MS 동안 "반영 중" 로딩을 보여 주고 끝나면 "반영 완료"로 바꾼다.
+export const CONFIG_CACHE_BUCKET_MS = 60_000
+export const APPLY_WAIT_MS = CONFIG_CACHE_BUCKET_MS + 10_000
 // 로컬(localhost)에서 어드민 없이 확인할 때 쓰는 브라우저 저장 키 — 설정 JSON을 여기에 넣으면 그대로 읽는다.
 export const LOCAL_CONFIG_STORAGE_KEY = 'merry-star-comments-config-local'
 
@@ -31,6 +35,7 @@ export const PLACEMENTS = [
 
 export type PlacementKey = (typeof PLACEMENTS)[number]['key']
 export type SortKey = 'latest' | 'reactions'
+export type PerPostOrder = 'latest' | 'reactions'
 
 // 누구에게 보여줄지. membership·pop은 가입/구독 여부를 알려 주는 유저 API가 아직 없어서(허브 VOC #85, C등급)
 // 지금은 고를 수 없다 — 어드민에 자리만 두고 available:false로 막아 둔다. API가 열리면 available을 true로 바꾸고
@@ -69,8 +74,17 @@ export interface StarCommentsConfig {
   hiddenStars: string[]
   /** 맨 위에 고정할 댓글: 댓글 내용에 이 글자가 들어 있으면 고정 */
   pinnedKeywords: string[]
-  /** 숨길 댓글: 댓글 내용에 이 글자가 들어 있으면 숨김 */
+  /** 숨길 댓글(금칙어): 댓글 내용에 이 글자가 들어 있으면 숨김 */
   hiddenKeywords: string[]
+  /** 태그 필터: 켜면 이 태그가 붙은 콘텐츠·스토리 글의 스타 댓글만 모은다(커뮤니티 글에는 태그가 없어 빠진다) */
+  tagFilter: { enabled: boolean; tags: string[] }
+  /** 글 하나당 보여줄 스타 댓글 수(0 = 제한 없음)와 고르는 기준 */
+  perPostLimit: number
+  perPostOrder: PerPostOrder
+  /** 이 반응 수 이상인 댓글만(0 = 제한 없음). 스타 답글은 반응 수를 몰라 0으로 본다 */
+  minReactions: number
+  /** 숨길 댓글 ID — 태그 글 안에서 한두 개만 빼고 싶을 때 */
+  hiddenCommentIds: string[]
   defaultSort: SortKey
   /** 한 번에 보여줄 개수 (6~30) */
   pageSize: number
@@ -100,6 +114,11 @@ export const DEFAULT_CONFIG: StarCommentsConfig = {
   hiddenStars: [],
   pinnedKeywords: [],
   hiddenKeywords: [],
+  tagFilter: { enabled: false, tags: [] },
+  perPostLimit: 0,
+  perPostOrder: 'latest',
+  minReactions: 0,
+  hiddenCommentIds: [],
   defaultSort: 'latest',
   pageSize: 12,
 }
@@ -113,6 +132,9 @@ export const LIMITS = {
   listItemLength: 40,
   pageSizeMin: 6,
   pageSizeMax: 30,
+  perPostLimitMax: 10,
+  minReactionsMax: 9999,
+  commentIdLength: 64,
 } as const
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
@@ -127,16 +149,21 @@ function bool(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback
 }
 
-function list(value: unknown): string[] {
+function list(value: unknown, maxLength: number = LIMITS.listItemLength): string[] {
   if (!Array.isArray(value)) return []
   const out: string[] = []
   for (const item of value) {
     if (typeof item !== 'string') continue
-    const trimmed = item.trim().slice(0, LIMITS.listItemLength)
+    const trimmed = item.trim().slice(0, maxLength)
     if (trimmed && !out.includes(trimmed)) out.push(trimmed)
     if (out.length >= LIMITS.listItems) break
   }
   return out
+}
+
+function int(value: unknown, fallback: number, min: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, Math.round(value)))
 }
 
 function date(value: unknown): string | null {
@@ -160,6 +187,7 @@ export function parseConfig(raw: unknown): StarCommentsConfig {
   const placementsRaw = (r.placements && typeof r.placements === 'object' ? r.placements : {}) as Record<string, unknown>
   const labelsRaw = (r.linkLabels && typeof r.linkLabels === 'object' ? r.linkLabels : {}) as Record<string, unknown>
   const sourcesRaw = (r.sources && typeof r.sources === 'object' ? r.sources : {}) as Record<string, unknown>
+  const tagRaw = (r.tagFilter && typeof r.tagFilter === 'object' ? r.tagFilter : {}) as Record<string, unknown>
   const pageSizeRaw = typeof r.pageSize === 'number' && Number.isFinite(r.pageSize) ? Math.round(r.pageSize) : d.pageSize
   const placements = { ...d.placements }
   for (const { key } of PLACEMENTS) placements[key] = bool(placementsRaw[key], d.placements[key])
@@ -189,6 +217,15 @@ export function parseConfig(raw: unknown): StarCommentsConfig {
     hiddenStars: list(r.hiddenStars),
     pinnedKeywords: list(r.pinnedKeywords),
     hiddenKeywords: list(r.hiddenKeywords),
+    // 태그 필터를 켰는데 태그가 하나도 없으면 아무것도 안 나오는 실수를 막기 위해 꺼진 것으로 본다.
+    tagFilter: (() => {
+      const tags = list(tagRaw.tags)
+      return { enabled: bool(tagRaw.enabled, false) && tags.length > 0, tags }
+    })(),
+    perPostLimit: int(r.perPostLimit, d.perPostLimit, 0, LIMITS.perPostLimitMax),
+    perPostOrder: r.perPostOrder === 'reactions' ? 'reactions' : 'latest',
+    minReactions: int(r.minReactions, d.minReactions, 0, LIMITS.minReactionsMax),
+    hiddenCommentIds: list(r.hiddenCommentIds, LIMITS.commentIdLength),
     defaultSort: r.defaultSort === 'reactions' ? 'reactions' : 'latest',
     pageSize: Math.min(LIMITS.pageSizeMax, Math.max(LIMITS.pageSizeMin, pageSizeRaw)),
   }
