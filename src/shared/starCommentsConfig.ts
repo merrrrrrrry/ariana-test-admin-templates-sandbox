@@ -58,6 +58,9 @@ export interface StarCommentsConfig {
   version: 1
   /** 전체 노출 스위치 */
   enabled: boolean
+  /** 마지막으로 저장한 사람(이름)과 시각(ISO). 어드민이 저장할 때 채우고 어드민 화면에만 보인다 — 팬 화면은 쓰지 않는다 */
+  updatedBy: string | null
+  updatedAt: string | null
   /** 팬 화면 제목 옆의 켜기/끄기 스위치를 보여줄지. 숨기면 방문자가 예전에 꺼 둔 상태도 무시하고 항상 보여 준다 */
   showToggle: boolean
   /** 노출 기간(한국 시간 기준 날짜, YYYY-MM-DD). 비우면 제한 없음 */
@@ -100,6 +103,8 @@ export interface StarCommentsConfig {
 export const DEFAULT_CONFIG: StarCommentsConfig = {
   version: 1,
   enabled: true,
+  updatedBy: null,
+  updatedAt: null,
   showToggle: true,
   startDate: null,
   endDate: null,
@@ -148,6 +153,7 @@ export const LIMITS = {
   perPostLimitMax: 10,
   minReactionsMax: 9999,
   commentIdLength: 64,
+  editorName: 30,
 } as const
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
@@ -207,6 +213,8 @@ export function parseConfig(raw: unknown): StarCommentsConfig {
   return {
     version: 1,
     enabled: bool(r.enabled, d.enabled),
+    updatedBy: typeof r.updatedBy === 'string' && r.updatedBy.trim() ? r.updatedBy.trim().slice(0, LIMITS.editorName) : null,
+    updatedAt: typeof r.updatedAt === 'string' && !Number.isNaN(Date.parse(r.updatedAt)) ? new Date(r.updatedAt).toISOString() : null,
     showToggle: bool(r.showToggle, d.showToggle),
     startDate: date(r.startDate),
     endDate: date(r.endDate),
