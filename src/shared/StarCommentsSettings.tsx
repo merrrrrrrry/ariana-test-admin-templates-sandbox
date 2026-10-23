@@ -422,6 +422,8 @@ export default function StarCommentsSettings() {
   const load = useCallback(() => {
     setLoaded(null)
     setLoadError(null)
+    // 다시 불러오면 충돌 안내도 걷어 낸다(안 그러면 최신 값을 불러온 뒤에도 "덮어쓰기" 안내가 남는다).
+    setStatus({ kind: 'idle' })
     readStoredConfig()
       .then((stored) => {
         setLoaded(stored.config)
