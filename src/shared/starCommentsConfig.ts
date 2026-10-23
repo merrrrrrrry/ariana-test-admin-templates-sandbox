@@ -82,8 +82,8 @@ export interface StarCommentsConfig {
   starOrder: string[]
   /** 숨길 스타(닉네임) */
   hiddenStars: string[]
-  /** 맨 위에 고정할 댓글: 댓글 내용에 이 글자가 들어 있으면 고정 */
-  pinnedKeywords: string[]
+  /** 맨 위에 고정할 댓글 ID(팬 화면 주소 끝에 ?curate=1 을 붙이면 카드마다 "ID 복사" 버튼이 보인다). 적은 순서대로 위에 놓인다 */
+  pinnedCommentIds: string[]
   /** 숨길 댓글(금칙어): 댓글 내용에 이 글자가 들어 있으면 숨김 */
   hiddenKeywords: string[]
   /** 태그 필터: 켜면 이 태그가 붙은 콘텐츠·스토리 글의 스타 댓글만 모은다(커뮤니티 글에는 태그가 없어 빠진다) */
@@ -130,7 +130,7 @@ export const DEFAULT_CONFIG: StarCommentsConfig = {
   excludedBoards: [],
   starOrder: [],
   hiddenStars: [],
-  pinnedKeywords: [],
+  pinnedCommentIds: [],
   hiddenKeywords: [],
   tagFilter: { enabled: false, tags: [] },
   perPostLimit: 0,
@@ -237,7 +237,7 @@ export function parseConfig(raw: unknown): StarCommentsConfig {
     excludedBoards: list(r.excludedBoards),
     starOrder: list(r.starOrder),
     hiddenStars: list(r.hiddenStars),
-    pinnedKeywords: list(r.pinnedKeywords),
+    pinnedCommentIds: list(r.pinnedCommentIds, LIMITS.commentIdLength),
     hiddenKeywords: list(r.hiddenKeywords),
     // 태그 필터를 켰는데 태그가 하나도 없으면 아무것도 안 나오는 실수를 막기 위해 꺼진 것으로 본다.
     tagFilter: (() => {
