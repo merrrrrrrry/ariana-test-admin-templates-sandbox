@@ -18,7 +18,7 @@ import {
 //
 // 어드민 게이트웨이는 어드민 로그인 쿠키 + MANAGEMENT 키(bsm_)를 함께 확인한다. 로컬(localhost)에는
 // 어드민 로그인이 없어 호출이 안 되므로, 로컬에서는 브라우저 저장(localStorage)으로 대신한다.
-// 제약: 1MB · JSON 깊이 10 · <script> 등 XSS 패턴 거부 · 스테이지당 1,000건. 저장 후 유저 화면 반영은 최대 10분.
+// 제약: 1MB · JSON 깊이 10 · <script> 등 XSS 패턴 거부 · 스테이지당 1,000건. 저장 후 유저 화면 반영은 보통 몇 초(팬 화면이 1분 단위 값을 붙여 읽는다).
 // ────────────────────────────────────────────────────────────────────────
 
 export function isLocalPreview(): boolean {
@@ -70,7 +70,7 @@ export async function writeStoredConfig(
   next: StarCommentsConfig,
   loaded: StarCommentsConfig,
   force = false
-): Promise<{ saved: boolean; conflict: boolean }> {
+): Promise<{ saved: boolean; conflict: boolean; by?: string | null; at?: string | null }> {
   // 서버에 보내기 전에 한 번 더 검증·정리한다(모르는 필드는 버려진다).
   const clean = parseConfig(next)
   assertSafeKeys(clean)
@@ -82,7 +82,8 @@ export async function writeStoredConfig(
 
   const current = await readStoredConfig()
   if (!force && current.exists && JSON.stringify(current.config) !== JSON.stringify(loaded)) {
-    return { saved: false, conflict: true }
+    // 누가 언제 먼저 바꿨는지 알면 같이 돌려줘서 화면이 안내할 수 있게 한다.
+    return { saved: false, conflict: true, by: current.config.updatedBy, at: current.config.updatedAt }
   }
   if (current.exists) {
     await client.put('/home/v1/custom-template-data/{displayKey}', {

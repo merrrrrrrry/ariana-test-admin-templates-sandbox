@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { color, shadow, textStyle } from '@bstage-sdk/design/admin'
 import { isLocalPreview, readStoredConfig, writeStoredConfig } from './storage'
 import {
@@ -223,6 +223,7 @@ function curationSummary(draft: StarCommentsConfig): string {
   else parts.push('전체 글')
   if (draft.perPostLimit > 0) parts.push(`글당 ${draft.perPostLimit}개(${draft.perPostOrder === 'reactions' ? '반응 많은 순' : '최신'})`)
   if (draft.minReactions > 0) parts.push(`반응 ${draft.minReactions}개 이상`)
+  if (draft.pinnedCommentIds.length > 0) parts.push(`고정 ${draft.pinnedCommentIds.length}개`)
   return parts.join(' · ')
 }
 
@@ -288,16 +289,70 @@ function DeviceToggle({ value, onChange }: { value: PreviewDevice; onChange: (ne
   )
 }
 
-// 유저 화면이 설정을 어떻게 보여 줄지 대략 미리 본다(문구 · 스타 순서 · 숨김 · 링크 문구).
-function Preview({ draft, device }: { draft: StarCommentsConfig; device: PreviewDevice }) {
+// 미리보기용 계산: 스타 칩 순서 · 보이는 예시 카드 · 요약 줄
+function derivePreview(cfg: StarCommentsConfig) {
   const rank = (nickname: string) => {
-    const index = draft.starOrder.indexOf(nickname)
-    return index === -1 ? draft.starOrder.length : index
+    const index = cfg.starOrder.indexOf(nickname)
+    return index === -1 ? cfg.starOrder.length : index
   }
-  const stars = ['메리', 'Gini', '애뤼애나'].filter((n) => !draft.hiddenStars.includes(n)).sort((a, b) => rank(a) - rank(b))
+  const stars = ['메리', 'Gini', '애뤼애나'].filter((n) => !cfg.hiddenStars.includes(n)).sort((a, b) => rank(a) - rank(b))
   const cards = SAMPLE_COMMENTS.filter(
-    (c) => !draft.hiddenStars.includes(c.nickname) && draft.sources[c.kind] && !draft.hiddenKeywords.some((w) => w && c.body.includes(w))
+    (c) => !cfg.hiddenStars.includes(c.nickname) && cfg.sources[c.kind] && !cfg.hiddenKeywords.some((w) => w && c.body.includes(w))
   )
+  const audience = AUDIENCES.find((a) => a.key === cfg.audience)
+  const placementsOn = PLACEMENTS.filter((p) => cfg.placements[p.key]).map((p) => p.label)
+  const period = cfg.startDate || cfg.endDate ? `${cfg.startDate ?? '처음'} ~ ${cfg.endDate ?? '계속'}` : '항상'
+  const summary: [string, string][] = [
+    ['상태', cfg.enabled ? '노출 중' : '꺼짐 — 팬 화면에 안 보여요'],
+    ['기간', period],
+    ['대상', audience?.label ?? '전체 공개'],
+    ['스위치', cfg.showToggle ? '보여주기' : '숨기기'],
+    ['자리', placementsOn.length ? placementsOn.join(' · ') : '켜진 자리가 없어요'],
+    ['기준', curationSummary(cfg)],
+  ]
+  return { stars, cards, summary }
+}
+
+// 저장하지 않은 변경을 미리보기에서 눈에 띄게 표시하는 스타일(노란색). 반투명이라 밝은 · 어두운 화면 모두에서 보인다.
+const CHANGED_STYLE: CSSProperties = {
+  background: 'rgba(255, 196, 0, 0.25)',
+  outline: '2px solid rgba(255, 170, 0, 0.8)',
+  outlineOffset: 1,
+  borderRadius: 6,
+}
+const LINK_KINDS = ['contents', 'story', 'community'] as const
+
+// 유저 화면이 설정을 어떻게 보여 줄지 대략 미리 본다(문구 · 스타 순서 · 숨김 · 링크 문구).
+// base = 마지막으로 저장된 설정 — 지금 고치는 값(draft)과 달라진 부분을 노란색으로 표시한다.
+function Preview({ draft, base, device }: { draft: StarCommentsConfig; base: StarCommentsConfig; device: PreviewDevice }) {
+  const now = derivePreview(draft)
+  const before = derivePreview(base)
+  const mark = (changed: boolean): CSSProperties => (changed ? CHANGED_STYLE : {})
+
+  const summaryChanged = now.summary.map(([, value], i) => value !== before.summary[i][1])
+  const titleChanged = draft.title !== base.title
+  const subtitleChanged = draft.subtitle !== base.subtitle
+  const toggleChanged = draft.showToggle !== base.showToggle
+  // 칩이 새로 생겼거나, 남아 있는 칩들 사이에서 순서가 바뀐 경우만 표시한다(다른 칩이 빠져서 밀린 것은 제외).
+  const keptBefore = before.stars.filter((n) => now.stars.includes(n))
+  const keptNow = now.stars.filter((n) => before.stars.includes(n))
+  const chipChanged = (name: string, _index: number) => !before.stars.includes(name) || keptBefore.indexOf(name) !== keptNow.indexOf(name)
+  const removedStars = before.stars.filter((n) => !now.stars.includes(n))
+  const addedCard = (nickname: string) => !before.cards.some((b) => b.nickname === nickname)
+  const removedCards = before.cards.filter((b) => !now.cards.some((c) => c.nickname === b.nickname))
+  const labelChanged = (kind: (typeof LINK_KINDS)[number]) => draft.linkLabels[kind] !== base.linkLabels[kind]
+  const emptyChanged = draft.emptyText !== base.emptyText || before.cards.length > 0
+  const anyChange =
+    summaryChanged.some(Boolean) ||
+    titleChanged ||
+    subtitleChanged ||
+    toggleChanged ||
+    now.stars.some((name, i) => chipChanged(name, i)) ||
+    removedStars.length > 0 ||
+    now.cards.some((c) => addedCard(c.nickname)) ||
+    removedCards.length > 0 ||
+    LINK_KINDS.some(labelChanged)
+
   const chip = (active = false): CSSProperties => ({
     ...textStyle('12/body/med'),
     padding: '5px 10px',
@@ -305,68 +360,98 @@ function Preview({ draft, device }: { draft: StarCommentsConfig; device: Preview
     background: active ? color.text.primary : color.bg['grouped-default'],
     color: active ? color.bg.base : color.text.primary,
   })
-  const audience = AUDIENCES.find((a) => a.key === draft.audience)
-  const placementsOn = PLACEMENTS.filter((p) => draft.placements[p.key]).map((p) => p.label)
-  const period = draft.startDate || draft.endDate ? `${draft.startDate ?? '처음'} ~ ${draft.endDate ?? '계속'}` : '항상'
-  const summary: [string, string][] = [
-    ['상태', draft.enabled ? '노출 중' : '꺼짐 — 팬 화면에 안 보여요'],
-    ['기간', period],
-    ['대상', audience?.label ?? '전체 공개'],
-    ['스위치', draft.showToggle ? '보여주기' : '숨기기'],
-    ['자리', placementsOn.length ? placementsOn.join(' · ') : '켜진 자리가 없어요'],
-    ['기준', curationSummary(draft)],
-  ]
   const pc = device === 'pc'
+  const card = (c: (typeof SAMPLE_COMMENTS)[number], removed: boolean) => (
+    <div
+      key={c.nickname}
+      style={{
+        border: `1px ${removed ? 'dashed' : 'solid'} ${color.border['divider-a']}`,
+        borderRadius: 10,
+        padding: 12,
+        boxShadow: removed ? 'none' : shadow['default-small'],
+        opacity: removed ? 0.6 : 1,
+        ...mark(removed || addedCard(c.nickname)),
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <span style={{ ...textStyle('13/body/bold'), color: color.text.primary }}>
+          {c.nickname}
+          {removed && <span style={{ ...textStyle('12/body/bold'), color: color.text.red, marginLeft: 6 }}>빠짐</span>}
+        </span>
+        <span style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'] }}>{c.time}</span>
+      </div>
+      <div style={{ ...textStyle('13/body/reg'), color: color.text.primary, margin: '6px 0 8px', textDecoration: removed ? 'line-through' : 'none' }}>
+        {c.body}
+      </div>
+      <div style={{ ...textStyle('12/body/reg'), color: color.text.secondary, background: color.bg['grouped-default'], borderRadius: 6, padding: '6px 8px', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+        <span>{c.title}</span>
+        <span style={{ ...textStyle('12/body/bold'), color: color.text.primary, ...mark(labelChanged(c.kind)) }}>{draft.linkLabels[c.kind]} ›</span>
+      </div>
+    </div>
+  )
   const screen = (
     <div style={{ background: color.bg.base, borderRadius: 12, padding: pc ? 24 : 16, border: `1px solid ${color.border['divider-a']}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ ...textStyle('16/title/bold'), color: color.text.primary }}>{draft.title}</div>
-          {draft.showToggle && (
-            <span
-              aria-label="켜기/끄기 스위치(미리보기)"
-              style={{ flexShrink: 0, width: 36, height: 20, padding: 2, boxSizing: 'border-box', borderRadius: 999, background: color.text.primary, display: 'flex', justifyContent: 'flex-end' }}
-            >
-              <span style={{ width: 16, height: 16, borderRadius: 999, background: color.bg.base }} />
-            </span>
-          )}
-        </div>
-        {draft.subtitle && <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary, marginTop: 2 }}>{draft.subtitle}</div>}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '12px 0' }}>
-          <span style={chip(true)}>전체 스타</span>
-          {stars.map((name) => (
-            <span key={name} style={chip()}>
-              {name}
-            </span>
-          ))}
-        </div>
-        {cards.length === 0 ? (
-          <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary }}>{draft.emptyText}</div>
-        ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: pc ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)', gap: 10 }}>
-            {cards.map((c) => (
-              <div key={c.nickname} style={{ border: `1px solid ${color.border['divider-a']}`, borderRadius: 10, padding: 12, boxShadow: shadow['default-small'] }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ ...textStyle('13/body/bold'), color: color.text.primary }}>{c.nickname}</span>
-                  <span style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'] }}>{c.time}</span>
-                </div>
-                <div style={{ ...textStyle('13/body/reg'), color: color.text.primary, margin: '6px 0 8px' }}>{c.body}</div>
-                <div style={{ ...textStyle('12/body/reg'), color: color.text.secondary, background: color.bg['grouped-default'], borderRadius: 6, padding: '6px 8px', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <span>{c.title}</span>
-                  <span style={{ ...textStyle('12/body/bold'), color: color.text.primary }}>{draft.linkLabels[c.kind]} ›</span>
-                </div>
-              </div>
-            ))}
-          </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ ...textStyle('16/title/bold'), color: color.text.primary, ...mark(titleChanged) }}>{draft.title}</div>
+        {draft.showToggle && (
+          <span
+            aria-label="켜기/끄기 스위치(미리보기)"
+            style={{ flexShrink: 0, width: 36, height: 20, padding: 2, boxSizing: 'border-box', borderRadius: 999, background: color.text.primary, display: 'flex', justifyContent: 'flex-end', ...(toggleChanged ? { outline: CHANGED_STYLE.outline, outlineOffset: 2 } : {}) }}
+          >
+            <span style={{ width: 16, height: 16, borderRadius: 999, background: color.bg.base }} />
+          </span>
         )}
+        {!draft.showToggle && toggleChanged && (
+          <span style={{ ...textStyle('12/body/bold'), color: color.text.red, ...CHANGED_STYLE, padding: '0 6px' }}>스위치 숨김</span>
+        )}
+      </div>
+      {(draft.subtitle || subtitleChanged) && (
+        <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary, marginTop: 2, ...mark(subtitleChanged) }}>
+          {draft.subtitle || '(부제 없음)'}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '12px 0' }}>
+        <span style={chip(true)}>전체 스타</span>
+        {now.stars.map((name, i) => (
+          <span key={name} style={{ ...chip(), ...mark(chipChanged(name, i)) }}>
+            {name}
+          </span>
+        ))}
+        {removedStars.map((name) => (
+          <span key={`removed-${name}`} style={{ ...chip(), ...CHANGED_STYLE, opacity: 0.6, textDecoration: 'line-through' }}>
+            {name}
+          </span>
+        ))}
+      </div>
+      {now.cards.length === 0 ? (
+        <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary, ...mark(emptyChanged) }}>{draft.emptyText}</div>
+      ) : null}
+      {now.cards.length + removedCards.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: pc ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)', gap: 10 }}>
+          {now.cards.map((c) => card(c, false))}
+          {removedCards.map((c) => card(c, true))}
+        </div>
+      )}
     </div>
   )
   return (
     <div style={{ background: color.bg['grouped-default'], borderRadius: 12, padding: 16 }}>
+      {anyChange && (
+        <div data-testid="preview-legend" style={{ ...textStyle('12/body/med'), color: color.text.primary, display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 10px' }}>
+          <span aria-hidden="true" style={{ width: 14, height: 14, borderRadius: 3, ...CHANGED_STYLE, outlineOffset: 0, display: 'inline-block' }} />
+          노란색 표시는 아직 저장하지 않은 변경이에요
+        </div>
+      )}
       <dl style={{ margin: '0 0 12px', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px' }}>
-        {summary.map(([label, value]) => (
+        {now.summary.map(([label, value], i) => (
           <div key={label} style={{ display: 'contents' }}>
             <dt style={{ ...textStyle('12/body/bold'), color: color.text['sub-a'] }}>{label}</dt>
-            <dd style={{ ...textStyle('12/body/med'), color: color.text.primary, margin: 0, overflowWrap: 'anywhere' }}>{value}</dd>
+            <dd style={{ ...textStyle('12/body/med'), color: color.text.primary, margin: 0, overflowWrap: 'anywhere' }}>
+              <span style={mark(summaryChanged[i])}>{value}</span>
+              {summaryChanged[i] && (
+                <span style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], display: 'block' }}>이전: {before.summary[i][1]}</span>
+              )}
+            </dd>
           </div>
         ))}
       </dl>
@@ -375,7 +460,36 @@ function Preview({ draft, device }: { draft: StarCommentsConfig; device: Preview
   )
 }
 
-type Status = { kind: 'idle' } | { kind: 'saved'; at: number } | { kind: 'error'; message: string } | { kind: 'conflict' }
+type Status =
+  | { kind: 'idle' }
+  | { kind: 'saved'; at: number }
+  | { kind: 'error'; message: string }
+  | { kind: 'conflict'; by?: string | null; at?: string | null }
+
+// 어드민 페이지 템플릿에는 "지금 로그인한 운영자"를 알려 주는 통로가 없어서, 저장하는 사람이 이름을 한 번 적으면
+// 이 브라우저에 기억해 두었다가 저장할 때마다 이름과 시각을 설정에 같이 남긴다.
+const EDITOR_STORAGE_KEY = 'merry-star-comments-editor'
+
+function readEditorName(): string {
+  try {
+    return (window.localStorage.getItem(EDITOR_STORAGE_KEY) ?? '').slice(0, LIMITS.editorName)
+  } catch {
+    return ''
+  }
+}
+
+function formatKst(iso: string): string {
+  const parts = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(iso))
+  return `${parts} (KST)`
+}
 
 // 저장 뒤 팬 화면에 닿을 때까지의 로딩. 어드민은 팬 쪽 캐시를 직접 볼 수 없어서
 // 저장 시각부터 APPLY_WAIT_MS(팬 화면이 설정을 새로 읽는 주기 + 여유)를 기다린 뒤 "반영 완료"로 바뀐다.
@@ -417,11 +531,14 @@ export default function StarCommentsSettings() {
   const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>('mobile')
+  const [editor, setEditor] = useState(readEditorName)
   const local = isLocalPreview()
 
   const load = useCallback(() => {
     setLoaded(null)
     setLoadError(null)
+    // 다시 불러오면 충돌 안내도 걷어 낸다(안 그러면 최신 값을 불러온 뒤에도 "덮어쓰기" 안내가 남는다).
+    setStatus({ kind: 'idle' })
     readStoredConfig()
       .then((stored) => {
         setLoaded(stored.config)
@@ -446,12 +563,19 @@ export default function StarCommentsSettings() {
     setSaving(true)
     setStatus({ kind: 'idle' })
     try {
-      const result = await writeStoredConfig(clean, loaded, force)
+      // 저장하는 사람과 시각을 설정에 같이 남긴다.
+      const next = parseConfig({ ...clean, updatedBy: editor.trim(), updatedAt: new Date().toISOString() })
+      const result = await writeStoredConfig(next, loaded, force)
       if (result.conflict) {
-        setStatus({ kind: 'conflict' })
+        setStatus({ kind: 'conflict', by: result.by, at: result.at })
       } else {
-        setLoaded(clean)
-        setDraft(clean)
+        try {
+          window.localStorage.setItem(EDITOR_STORAGE_KEY, next.updatedBy ?? '')
+        } catch {
+          // 저장소를 못 써도 저장 자체에는 영향이 없다.
+        }
+        setLoaded(next)
+        setDraft(next)
         setStatus({ kind: 'saved', at: Date.now() })
       }
     } catch (err) {
@@ -485,8 +609,13 @@ export default function StarCommentsSettings() {
     <div style={shell}>
       <style>{LAYOUT_CSS}</style>
       <h1 style={{ ...textStyle('20/title/bold'), color: color.text.primary, margin: '0 0 4px' }}>스타 댓글 모아보기 설정</h1>
-      <p style={{ ...textStyle('13/body/reg'), color: color.text.secondary, margin: '0 0 16px' }}>
+      <p style={{ ...textStyle('13/body/reg'), color: color.text.secondary, margin: '0 0 6px' }}>
         팬 화면의 "스타 댓글 모아보기"를 코드 수정 없이 운영해요. 저장하면 1분 안에 팬 화면에 반영되고, 반영이 끝나면 알려 드려요.
+      </p>
+      <p data-testid="last-edited" style={{ ...textStyle('13/body/med'), color: color.text['sub-a'], margin: '0 0 16px' }}>
+        {loaded.updatedAt
+          ? `마지막 수정: ${loaded.updatedBy ?? '이름 없음'} · ${formatKst(loaded.updatedAt)}`
+          : '마지막 수정: 기록 없음 (수정자 기록 기능 이전에 저장됐거나 아직 저장한 적이 없어요)'}
       </p>
       {local && (
         <p style={{ ...textStyle('13/body/med'), color: color.text.yellow, margin: '0 0 16px' }}>
@@ -505,7 +634,7 @@ export default function StarCommentsSettings() {
           <p style={{ ...textStyle('13/body/reg'), color: color.text.secondary, margin: '0 0 12px' }}>
             문구 · 스타 순서 · 숨김 · 링크 문구가 이렇게 보여요. 실제 댓글이 아닌 예시예요.
           </p>
-          <Preview draft={clean} device={previewDevice} />
+          <Preview draft={clean} base={loaded} device={previewDevice} />
         </section>
       </aside>
 
@@ -710,21 +839,20 @@ export default function StarCommentsSettings() {
           </div>
         </div>
 
-        <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '8px 0 6px' }}>맨 위에 고정할 댓글</div>
+        <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '8px 0 2px' }}>맨 위에 고정할 댓글 ID</div>
+        <p style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], margin: '0 0 6px' }}>
+          적은 순서대로 목록 맨 위에 놓여요(위가 먼저). 댓글 ID는 팬 화면 주소 끝에 ?curate=1 을 붙이면 카드마다 보이는 "ID 복사" 버튼으로 가져와요.
+        </p>
         <ListEditor
-          values={draft.pinnedKeywords}
-          onChange={(pinnedKeywords) => patch({ pinnedKeywords })}
-          placeholder="댓글에 들어 있는 글자 (예: 이벤트 당첨)"
-        />
-        <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '16px 0 6px' }}>금칙어 (이 글자가 들어 있으면 숨겨요)</div>
-        <ListEditor
-          values={draft.hiddenKeywords}
-          onChange={(hiddenKeywords) => patch({ hiddenKeywords })}
-          placeholder="댓글에 들어 있는 글자 (예: 광고)"
+          values={draft.pinnedCommentIds}
+          onChange={(pinnedCommentIds) => patch({ pinnedCommentIds })}
+          placeholder="댓글 ID"
+          maxLength={LIMITS.commentIdLength}
+          ordered
         />
         <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '16px 0 2px' }}>숨길 댓글 ID</div>
         <p style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], margin: '0 0 6px' }}>
-          태그가 붙은 글 안에서 딱 한두 개만 빼고 싶을 때 써요. 댓글 ID는 팬 화면 주소 끝에 ?curate=1 을 붙이면 카드마다 보이는 "ID 복사" 버튼으로 가져와요.
+          태그가 붙은 글 안에서 딱 한두 개만 빼고 싶을 때 써요. ID를 가져오는 방법은 위와 같아요.
         </p>
         <ListEditor
           values={draft.hiddenCommentIds}
@@ -732,8 +860,14 @@ export default function StarCommentsSettings() {
           placeholder="댓글 ID"
           maxLength={LIMITS.commentIdLength}
         />
+        <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '16px 0 6px' }}>금칙어 (이 글자가 들어 있으면 숨겨요)</div>
+        <ListEditor
+          values={draft.hiddenKeywords}
+          onChange={(hiddenKeywords) => patch({ hiddenKeywords })}
+          placeholder="댓글에 들어 있는 글자 (예: 광고)"
+        />
         <p style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], margin: '12px 0 0' }}>
-          글자로 찾는 항목은 대소문자를 구분하지 않아요.
+          금칙어는 대소문자를 구분하지 않아요.
         </p>
       </Section>
 
@@ -789,15 +923,33 @@ export default function StarCommentsSettings() {
         <span style={{ ...textStyle('13/body/med'), color: status.kind === 'error' || status.kind === 'conflict' ? color.text.red : color.text.secondary, flex: 1, minWidth: 180 }}>
           {status.kind === 'saved' && <ApplyProgress savedAt={status.at} />}
           {status.kind === 'error' && `저장하지 못했어요: ${status.message}`}
-          {status.kind === 'conflict' && '다른 운영자가 먼저 설정을 바꿨어요. 그래도 내 내용으로 저장할까요?'}
-          {status.kind === 'idle' && (dirty ? '저장하지 않은 변경이 있어요.' : '변경 사항이 없어요.')}
+          {status.kind === 'conflict' &&
+            `${status.by && status.at ? `${status.by}님이 ${formatKst(status.at)}에` : '다른 운영자가'} 먼저 설정을 바꿨어요. 그래도 내 내용으로 저장할까요?`}
+          {status.kind === 'idle' &&
+            (dirty ? (editor.trim() ? '저장하지 않은 변경이 있어요.' : '저장하려면 수정자 이름을 적어 주세요.') : '변경 사항이 없어요.')}
         </span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ ...textStyle('12/body/med'), color: color.text['sub-a'], whiteSpace: 'nowrap' }}>수정자</span>
+          <input
+            aria-label="수정자 이름"
+            value={editor}
+            maxLength={LIMITS.editorName}
+            placeholder="이름"
+            onChange={(e) => setEditor(e.target.value)}
+            style={{ ...inputStyle, width: 120, height: 36 }}
+          />
+        </label>
         {status.kind === 'conflict' && (
           <>
             <button type="button" style={buttonStyle('secondary')} onClick={load}>
               다시 불러오기
             </button>
-            <button type="button" style={buttonStyle('primary', saving)} disabled={saving} onClick={() => save(true)}>
+            <button
+              type="button"
+              style={buttonStyle('primary', saving || !editor.trim())}
+              disabled={saving || !editor.trim()}
+              onClick={() => save(true)}
+            >
               덮어쓰기
             </button>
           </>
@@ -815,7 +967,12 @@ export default function StarCommentsSettings() {
             >
               되돌리기
             </button>
-            <button type="button" style={buttonStyle('primary', !dirty || saving)} disabled={!dirty || saving} onClick={() => save()}>
+            <button
+              type="button"
+              style={buttonStyle('primary', !dirty || saving || !editor.trim())}
+              disabled={!dirty || saving || !editor.trim()}
+              onClick={() => save()}
+            >
               {saving ? '저장 중…' : '저장'}
             </button>
           </>
