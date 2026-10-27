@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { color, shadow, textStyle } from '@bstage-sdk/design/admin'
-import { isLocalPreview, readStoredConfig, writeStoredConfig } from './storage'
+import { isLocalPreview, readStoredConfig, resolveOperatorName, writeStoredConfig } from './storage'
 import {
   APPLY_WAIT_MS,
   AUDIENCES,
@@ -490,8 +490,8 @@ type Status =
   | { kind: 'error'; message: string }
   | { kind: 'conflict'; by?: string | null; at?: string | null }
 
-// 어드민 페이지 템플릿에는 "지금 로그인한 운영자"를 알려 주는 통로가 없어서, 저장하는 사람이 이름을 한 번 적으면
-// 이 브라우저에 기억해 두었다가 저장할 때마다 이름과 시각을 설정에 같이 남긴다.
+// 저장하면 서버가 저장한 운영자 ID와 시각을 기록한다. ID로 이름을 찾을 수 있으면(storage.resolveOperatorName) 그걸 쓰고,
+// 못 찾으면 저장하는 사람이 이름을 한 번 적어 이 브라우저에 기억해 두었다가 저장할 때마다 설정에 같이 남긴다.
 const EDITOR_STORAGE_KEY = 'merry-star-comments-editor'
 
 function readEditorName(): string {
@@ -556,7 +556,17 @@ export default function StarCommentsSettings() {
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>('mobile')
   const [editor, setEditor] = useState(readEditorName)
+  // 서버가 저장할 때 남긴 마지막 저장자 — ID로 이름을 찾을 수 있으면 수정자를 직접 적지 않아도 된다.
+  const [savedBy, setSavedBy] = useState<{ name: string; at: string | null } | null>(null)
+  const autoEditor = savedBy !== null
   const local = isLocalPreview()
+
+  const refreshSavedBy = useCallback((stored: { savedById?: string | null; savedAt?: string | null }) => {
+    if (!stored.savedById) return
+    resolveOperatorName(stored.savedById).then((name) => {
+      if (name) setSavedBy({ name, at: stored.savedAt ?? null })
+    })
+  }, [])
 
   const load = useCallback(() => {
     setLoaded(null)
@@ -567,9 +577,10 @@ export default function StarCommentsSettings() {
       .then((stored) => {
         setLoaded(stored.config)
         setDraft(stored.config)
+        refreshSavedBy(stored)
       })
       .catch((err) => setLoadError(err instanceof Error ? err.message : '설정을 불러오지 못했어요'))
-  }, [])
+  }, [refreshSavedBy])
 
   useEffect(() => {
     load()
@@ -577,6 +588,7 @@ export default function StarCommentsSettings() {
 
   const clean = useMemo(() => parseConfig(draft), [draft])
   const dirty = loaded !== null && JSON.stringify(clean) !== JSON.stringify(loaded)
+  const canSave = autoEditor || editor.trim().length > 0
   const patch = (partial: Partial<StarCommentsConfig>) => {
     setStatus({ kind: 'idle' })
     setDraft((prev) => ({ ...prev, ...partial }))
@@ -588,19 +600,22 @@ export default function StarCommentsSettings() {
     setStatus({ kind: 'idle' })
     try {
       // 저장하는 사람과 시각을 설정에 같이 남긴다.
-      const next = parseConfig({ ...clean, updatedBy: editor.trim(), updatedAt: new Date().toISOString() })
+      // 이름을 자동으로 찾을 수 있으면 직접 적은 이름은 쓰지 않는다(서버가 저장자를 기록한다).
+      const next = parseConfig({ ...clean, updatedBy: autoEditor ? null : editor.trim(), updatedAt: new Date().toISOString() })
       const result = await writeStoredConfig(next, loaded, force)
       if (result.conflict) {
-        setStatus({ kind: 'conflict', by: result.by, at: result.at })
+        setStatus({ kind: 'conflict', by: result.by ?? savedBy?.name, at: result.at })
       } else {
         try {
-          window.localStorage.setItem(EDITOR_STORAGE_KEY, next.updatedBy ?? '')
+          if (!autoEditor) window.localStorage.setItem(EDITOR_STORAGE_KEY, next.updatedBy ?? '')
         } catch {
           // 저장소를 못 써도 저장 자체에는 영향이 없다.
         }
         setLoaded(next)
         setDraft(next)
         setStatus({ kind: 'saved', at: Date.now() })
+        // 방금 저장한 사람의 이름을 서버 기록에서 다시 찾는다(처음 저장하는 사람도 다음부터 자동이 된다).
+        if (!local) readStoredConfig().then(refreshSavedBy).catch(() => undefined)
       }
     } catch (err) {
       setStatus({ kind: 'error', message: err instanceof Error ? err.message : '저장하지 못했어요' })
@@ -637,7 +652,9 @@ export default function StarCommentsSettings() {
         팬 화면의 "스타 댓글 모아보기"를 코드 수정 없이 운영해요. 저장하면 1분 안에 팬 화면에 반영되고, 반영이 끝나면 알려 드려요.
       </p>
       <p data-testid="last-edited" style={{ ...textStyle('13/body/med'), color: color.text['sub-a'], margin: '0 0 16px' }}>
-        {loaded.updatedAt
+        {savedBy && (savedBy.at ?? loaded.updatedAt)
+          ? `마지막 수정: ${savedBy.name} · ${formatKst((savedBy.at ?? loaded.updatedAt)!)}`
+          : loaded.updatedAt
           ? `마지막 수정: ${loaded.updatedBy ?? '이름 없음'} · ${formatKst(loaded.updatedAt)}`
           : '마지막 수정: 기록 없음 (수정자 기록 기능 이전에 저장됐거나 아직 저장한 적이 없어요)'}
       </p>
@@ -1002,19 +1019,21 @@ export default function StarCommentsSettings() {
           {status.kind === 'conflict' &&
             `${status.by && status.at ? `${status.by}님이 ${formatKst(status.at)}에` : '다른 운영자가'} 먼저 설정을 바꿨어요. 그래도 내 내용으로 저장할까요?`}
           {status.kind === 'idle' &&
-            (dirty ? (editor.trim() ? '저장하지 않은 변경이 있어요.' : '저장하려면 수정자 이름을 적어 주세요.') : '변경 사항이 없어요.')}
+            (dirty ? (canSave ? '저장하지 않은 변경이 있어요.' : '저장하려면 수정자 이름을 적어 주세요.') : '변경 사항이 없어요.')}
         </span>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ ...textStyle('12/body/med'), color: color.text['sub-a'], whiteSpace: 'nowrap' }}>수정자</span>
-          <input
-            aria-label="수정자 이름"
-            value={editor}
-            maxLength={LIMITS.editorName}
-            placeholder="이름"
-            onChange={(e) => setEditor(e.target.value)}
-            style={{ ...inputStyle, width: 120, height: 36 }}
-          />
-        </label>
+        {!autoEditor && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ ...textStyle('12/body/med'), color: color.text['sub-a'], whiteSpace: 'nowrap' }}>수정자</span>
+            <input
+              aria-label="수정자 이름"
+              value={editor}
+              maxLength={LIMITS.editorName}
+              placeholder="이름"
+              onChange={(e) => setEditor(e.target.value)}
+              style={{ ...inputStyle, width: 120, height: 36 }}
+            />
+          </label>
+        )}
         {status.kind === 'conflict' && (
           <>
             <button type="button" style={buttonStyle('secondary')} onClick={load}>
@@ -1022,8 +1041,8 @@ export default function StarCommentsSettings() {
             </button>
             <button
               type="button"
-              style={buttonStyle('primary', saving || !editor.trim())}
-              disabled={saving || !editor.trim()}
+              style={buttonStyle('primary', saving || !canSave)}
+              disabled={saving || !canSave}
               onClick={() => save(true)}
             >
               덮어쓰기
@@ -1045,8 +1064,8 @@ export default function StarCommentsSettings() {
             </button>
             <button
               type="button"
-              style={buttonStyle('primary', !dirty || saving || !editor.trim())}
-              disabled={!dirty || saving || !editor.trim()}
+              style={buttonStyle('primary', !dirty || saving || !canSave)}
+              disabled={!dirty || saving || !canSave}
               onClick={() => save()}
             >
               {saving ? '저장 중…' : '저장'}
