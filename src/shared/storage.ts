@@ -29,6 +29,42 @@ export interface StoredConfig {
   config: StarCommentsConfig
   /** 저장소에 이미 값이 있는지 — 있으면 PUT, 없으면 POST로 저장한다 */
   exists: boolean
+  /** 서버가 저장할 때 직접 기록한 마지막 저장자(운영자 ID)와 시각 — 설정 값 안의 updatedBy(손으로 적은 이름)와 별개다 */
+  savedById?: string | null
+  savedAt?: string | null
+}
+
+function readSavedMeta(body: unknown): { savedById: string | null; savedAt: string | null } {
+  const r = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
+  return { savedById: str(r.updatedBy), savedAt: str(r.updatedAt) }
+}
+
+const operatorNames = new Map<string, string | null>()
+
+/** 운영자 ID로 표시 이름을 찾는다. 권한이 없거나 응답에 이름이 없으면 null (이메일은 쓰지 않는다). */
+export async function resolveOperatorName(id: string): Promise<string | null> {
+  if (operatorNames.has(id)) return operatorNames.get(id) ?? null
+  let name: string | null = null
+  for (const path of ['/account/v1/operators/{operatorId}', '/home/v1/operators/{operatorId}']) {
+    try {
+      const res = await client.get<unknown>(path, { path: { operatorId: id } })
+      const body = unwrapStoredData(res.data)
+      const r = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
+      const profile = r.profile && typeof r.profile === 'object' ? (r.profile as Record<string, unknown>) : {}
+      const found = [r.name, r.displayName, r.nickname, r.userName, profile.name, profile.nickname].find(
+        (v): v is string => typeof v === 'string' && v.trim().length > 0
+      )
+      if (found) {
+        name = found.trim().slice(0, 30)
+        break
+      }
+    } catch {
+      // 다음 경로를 시도한다
+    }
+  }
+  operatorNames.set(id, name)
+  return name
 }
 
 // custom-template-data는 JSON 키에 점(.)·$가 있으면 HTTP 500을 돌려준다(2026-10-22 실측).
@@ -58,7 +94,7 @@ export async function readStoredConfig(): Promise<StoredConfig> {
     const res = await client.get<unknown>('/home/v1/custom-template-data/{displayKey}', {
       path: { displayKey: CONFIG_KEY },
     })
-    return { config: parseConfig(unwrapStoredData(res.data)), exists: true }
+    return { config: parseConfig(unwrapStoredData(res.data)), exists: true, ...readSavedMeta(res.data) }
   } catch (err) {
     if (isNotFound(err)) return { config: DEFAULT_CONFIG, exists: false }
     throw err
