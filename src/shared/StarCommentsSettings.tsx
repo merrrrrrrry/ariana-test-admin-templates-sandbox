@@ -22,6 +22,9 @@ const LAYOUT_CSS = `
 .scs-layout { display: grid; grid-template-columns: minmax(340px, 460px) minmax(0, 1fr); gap: 24px; align-items: start; }
 .scs-preview { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
 .scs-layout--pc { grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); }
+.scs-layout input:focus-visible, .scs-layout select:focus-visible, .scs-layout textarea:focus-visible, .scs-layout button:focus-visible {
+  outline: 2px solid var(--button-color, var(--admin-mode-surface-form-bstage)); outline-offset: 1px;
+}
 @media (max-width: 960px) {
   .scs-layout { grid-template-columns: minmax(0, 1fr); }
   .scs-preview { position: static; max-height: none; overflow: visible; }
@@ -34,15 +37,18 @@ const LAYOUT_CSS = `
 // 스타 · 게시판 · 댓글은 어드민에서 목록을 불러올 수 없어 닉네임 · 게시판 제목 · 키워드로 지정한다.
 // ────────────────────────────────────────────────────────────────────────
 
+// 콘솔 기본 입력창과 같은 모양(옅은 채움 · 36px · 모서리 6px). 강조색은 스테이지 브랜드 버튼색(--button-color)을 따른다.
+const BRAND = `var(--button-color, ${color.surface['form-bstage']})`
+
 const inputStyle: CSSProperties = {
-  ...textStyle('15/body/reg'),
+  ...textStyle('13/body/reg'),
   width: '100%',
   boxSizing: 'border-box',
-  height: 40,
+  height: 36,
   padding: '0 12px',
-  borderRadius: 8,
-  border: `1px solid ${color.border['default-a']}`,
-  background: color.bg.base,
+  borderRadius: 6,
+  border: '0.8px solid transparent',
+  background: color.surface['form-weak-a'],
   color: color.text.primary,
 }
 
@@ -56,14 +62,14 @@ const cardStyle: CSSProperties = {
 
 function buttonStyle(kind: 'primary' | 'secondary' | 'ghost', disabled = false): CSSProperties {
   return {
-    ...textStyle('14/title/med'),
-    height: 40,
-    padding: '0 16px',
-    borderRadius: 8,
+    ...textStyle('13/body/med'),
+    height: 36,
+    padding: '0 14px',
+    borderRadius: 6,
     cursor: disabled ? 'not-allowed' : 'pointer',
     opacity: disabled ? 0.5 : 1,
     border: kind === 'primary' ? 'none' : `1px solid ${color.border['default-a']}`,
-    background: kind === 'primary' ? color.surface['form-bstage'] : kind === 'ghost' ? 'transparent' : color.bg.base,
+    background: kind === 'primary' ? BRAND : kind === 'ghost' ? 'transparent' : color.bg.base,
     color: kind === 'primary' ? color.bg.base : color.text.primary,
     whiteSpace: 'nowrap',
   }
@@ -97,7 +103,7 @@ function Check({ checked, onChange, label, hint }: { checked: boolean; onChange:
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        style={{ width: 18, height: 18, marginTop: 2, accentColor: 'currentColor', cursor: 'pointer' }}
+        style={{ width: 18, height: 18, marginTop: 2, accentColor: BRAND, cursor: 'pointer' }}
       />
       <span>
         <span style={{ ...textStyle('14/title/med'), color: color.text.primary, display: 'block' }}>{label}</span>
@@ -322,8 +328,8 @@ function derivePreview(cfg: StarCommentsConfig) {
 
 // 저장하지 않은 변경을 미리보기에서 눈에 띄게 표시하는 스타일(노란색). 반투명이라 밝은 · 어두운 화면 모두에서 보인다.
 const CHANGED_STYLE: CSSProperties = {
-  background: 'rgba(255, 196, 0, 0.25)',
-  outline: '2px solid rgba(255, 170, 0, 0.8)',
+  background: color.surface['form-yellow-weak-a'],
+  outline: `2px solid ${color.border.yellow}`,
   outlineOffset: 1,
   borderRadius: 6,
 }
@@ -673,7 +679,7 @@ export default function StarCommentsSettings() {
               name="scs-show-toggle"
               checked={draft.showToggle === value}
               onChange={() => patch({ showToggle: value })}
-              style={{ width: 18, height: 18, marginTop: 2, accentColor: 'currentColor', cursor: 'pointer' }}
+              style={{ width: 18, height: 18, marginTop: 2, accentColor: BRAND, cursor: 'pointer' }}
             />
             <span>
               <span style={{ ...textStyle('14/title/med'), color: color.text.primary, display: 'block' }}>{label}</span>
@@ -927,7 +933,7 @@ export default function StarCommentsSettings() {
               name="scs-view-mode"
               checked={draft.viewMode === key}
               onChange={() => patch({ viewMode: key })}
-              style={{ width: 18, height: 18, marginTop: 2, accentColor: 'currentColor', cursor: 'pointer' }}
+              style={{ width: 18, height: 18, marginTop: 2, accentColor: BRAND, cursor: 'pointer' }}
             />
             <span>
               <span style={{ ...textStyle('14/title/med'), color: color.text.primary, display: 'block' }}>{label}</span>
