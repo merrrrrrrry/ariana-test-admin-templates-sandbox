@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { color, shadow, textStyle } from '@bstage-sdk/design/admin'
 import { isLocalPreview, readStoredConfig, resolveOperatorName, writeStoredConfig } from './storage'
+import { UNKNOWN_ENVIRONMENT, detectStageEnvironment, placementVisible, type StageEnvironment } from './stageEnvironment'
 import {
   APPLY_WAIT_MS,
   AUDIENCES,
@@ -299,7 +300,7 @@ function DeviceToggle({ value, onChange }: { value: PreviewDevice; onChange: (ne
 }
 
 // 미리보기용 계산: 스타 칩 순서 · 보이는 예시 카드 · 요약 줄
-function derivePreview(cfg: StarCommentsConfig) {
+function derivePreview(cfg: StarCommentsConfig, env: StageEnvironment) {
   const rank = (nickname: string) => {
     const index = cfg.starOrder.indexOf(nickname)
     return index === -1 ? cfg.starOrder.length : index
@@ -309,7 +310,7 @@ function derivePreview(cfg: StarCommentsConfig) {
     (c) => !cfg.hiddenStars.includes(c.nickname) && cfg.sources[c.kind] && !cfg.hiddenKeywords.some((w) => w && c.body.includes(w))
   )
   const audience = AUDIENCES.find((a) => a.key === cfg.audience)
-  const placementsOn = PLACEMENTS.filter((p) => cfg.placements[p.key]).map((p) => p.label)
+  const placementsOn = PLACEMENTS.filter((p) => placementVisible(p.key, env) && cfg.placements[p.key]).map((p) => p.label)
   const period =
     cfg.startDate || cfg.endDate
       ? `${cfg.startDate ? `${cfg.startDate} ${cfg.startTime ?? '00:00'}` : '처음'} ~ ${cfg.endDate ? `${cfg.endDate} ${cfg.endTime ?? '23:59'}` : '계속'}`
@@ -337,9 +338,19 @@ const LINK_KINDS = ['contents', 'story', 'community'] as const
 
 // 유저 화면이 설정을 어떻게 보여 줄지 대략 미리 본다(문구 · 스타 순서 · 숨김 · 링크 문구).
 // base = 마지막으로 저장된 설정 — 지금 고치는 값(draft)과 달라진 부분을 노란색으로 표시한다.
-function Preview({ draft, base, device }: { draft: StarCommentsConfig; base: StarCommentsConfig; device: PreviewDevice }) {
-  const now = derivePreview(draft)
-  const before = derivePreview(base)
+function Preview({
+  draft,
+  base,
+  device,
+  env,
+}: {
+  draft: StarCommentsConfig
+  base: StarCommentsConfig
+  device: PreviewDevice
+  env: StageEnvironment
+}) {
+  const now = derivePreview(draft, env)
+  const before = derivePreview(base, env)
   const mark = (changed: boolean): CSSProperties => (changed ? CHANGED_STYLE : {})
 
   const summaryChanged = now.summary.map(([, value], i) => value !== before.summary[i][1])
@@ -559,7 +570,13 @@ export default function StarCommentsSettings() {
   // 서버가 저장할 때 남긴 마지막 저장자 — ID로 이름을 찾을 수 있으면 수정자를 직접 적지 않아도 된다.
   const [savedBy, setSavedBy] = useState<{ name: string; at: string | null } | null>(null)
   const autoEditor = savedBy !== null
+  // 이 스테이지에 라운지 · 큐레이션이 있는지 — 없는 화면의 자리는 목록에서 숨긴다(알 수 없으면 모두 보인다).
+  const [env, setEnv] = useState<StageEnvironment>(UNKNOWN_ENVIRONMENT)
   const local = isLocalPreview()
+
+  useEffect(() => {
+    detectStageEnvironment().then(setEnv)
+  }, [])
 
   const refreshSavedBy = useCallback((stored: { savedById?: string | null; savedAt?: string | null }) => {
     if (!stored.savedById) return
@@ -675,7 +692,7 @@ export default function StarCommentsSettings() {
           <p style={{ ...textStyle('13/body/reg'), color: color.text.secondary, margin: '0 0 12px' }}>
             문구 · 스타 순서 · 숨김 · 링크 문구가 이렇게 보여요. 실제 댓글이 아닌 예시예요.
           </p>
-          <Preview draft={clean} base={loaded} device={previewDevice} />
+          <Preview draft={clean} base={loaded} device={previewDevice} env={env} />
         </section>
       </aside>
 
@@ -783,7 +800,7 @@ export default function StarCommentsSettings() {
           ) : null
         })()}
         <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '8px 0 2px' }}>어디에 보여줄까요</div>
-        {PLACEMENTS.map(({ key, label }) => (
+        {PLACEMENTS.filter(({ key }) => placementVisible(key, env)).map(({ key, label }) => (
           <Check
             key={key}
             checked={draft.placements[key]}
@@ -794,6 +811,14 @@ export default function StarCommentsSettings() {
         <p style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], margin: '6px 0 0' }}>
           포털에 등록·게시된 자리만 실제로 보여요. 체크를 꺼도 위젯은 남아 있고 화면에서만 사라져요.
         </p>
+        {(env.lounge === false || env.curation === false) && (
+          <p style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], margin: '4px 0 0' }}>
+            {[env.lounge === false && '라운지가 없는 스테이지라 라운지 자리', env.curation === false && '큐레이션이 없어 큐레이션 목록 자리']
+              .filter(Boolean)
+              .join(' · ')}
+            는 숨겼어요. 생기면 여기에 나타나요.
+          </p>
+        )}
       </Section>
 
       <Section title="문구" hint="팬 화면에 보이는 글자를 바꿔요. 비우면 기본 문구를 써요.">
