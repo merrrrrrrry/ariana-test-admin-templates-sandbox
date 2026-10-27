@@ -55,9 +55,11 @@ async function detectLounge(): Promise<boolean | null> {
     const items = asList(list.data)
     if (items) return items.length > 0
   }
-  // 목록을 못 읽으면 라운지 홈 페이지가 아예 없는지(404)만 본다. 있다고 나와도 라운지가 있다는 뜻은 아니라서 알 수 없음으로 둔다.
+  // 어드민 게이트웨이에는 라운지 목록이 없다(/lounges는 공개 API라 404). 대신 라운지 홈 페이지를 본다.
+  // 라운지가 없는 스테이지(ariana-test)에서는 404가 아니라 400이 돌아온다(2026-10-27 실측, 문서에는 없는 응답).
+  // 있다고 나오면(200) 라운지가 있다는 뜻은 아니라서 알 수 없음으로 둔다. 잘못 숨겼을 때를 위해 화면에 "그래도 보기"가 있다.
   const page = await get('/home/v1/pages/lounge-index')
-  return !page.ok && page.status === 404 ? false : null
+  return !page.ok && (page.status === 404 || page.status === 400) ? false : null
 }
 
 function hasCuration(section: unknown): boolean {

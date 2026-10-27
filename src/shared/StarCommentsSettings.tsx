@@ -572,6 +572,9 @@ export default function StarCommentsSettings() {
   const autoEditor = savedBy !== null
   // 이 스테이지에 라운지 · 큐레이션이 있는지 — 없는 화면의 자리는 목록에서 숨긴다(알 수 없으면 모두 보인다).
   const [env, setEnv] = useState<StageEnvironment>(UNKNOWN_ENVIRONMENT)
+  // 확인이 틀렸을 때를 위해, 숨긴 자리를 직접 펼쳐 볼 수 있게 한다.
+  const [showHiddenPlacements, setShowHiddenPlacements] = useState(false)
+  const effectiveEnv = showHiddenPlacements ? UNKNOWN_ENVIRONMENT : env
   const local = isLocalPreview()
 
   useEffect(() => {
@@ -692,7 +695,7 @@ export default function StarCommentsSettings() {
           <p style={{ ...textStyle('13/body/reg'), color: color.text.secondary, margin: '0 0 12px' }}>
             문구 · 스타 순서 · 숨김 · 링크 문구가 이렇게 보여요. 실제 댓글이 아닌 예시예요.
           </p>
-          <Preview draft={clean} base={loaded} device={previewDevice} env={env} />
+          <Preview draft={clean} base={loaded} device={previewDevice} env={effectiveEnv} />
         </section>
       </aside>
 
@@ -800,7 +803,7 @@ export default function StarCommentsSettings() {
           ) : null
         })()}
         <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '8px 0 2px' }}>어디에 보여줄까요</div>
-        {PLACEMENTS.filter(({ key }) => placementVisible(key, env)).map(({ key, label }) => (
+        {PLACEMENTS.filter(({ key }) => placementVisible(key, effectiveEnv)).map(({ key, label }) => (
           <Check
             key={key}
             checked={draft.placements[key]}
@@ -813,10 +816,18 @@ export default function StarCommentsSettings() {
         </p>
         {(env.lounge === false || env.curation === false) && (
           <p style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], margin: '4px 0 0' }}>
+            {showHiddenPlacements ? '숨겨진 자리까지 모두 보고 있어요. ' : ''}
             {[env.lounge === false && '라운지가 없는 스테이지라 라운지 자리', env.curation === false && '큐레이션이 없어 큐레이션 목록 자리']
               .filter(Boolean)
               .join(' · ')}
-            는 숨겼어요. 생기면 여기에 나타나요.
+            {showHiddenPlacements ? '는 이 스테이지에서 쓰이지 않아요.' : '는 숨겼어요. 생기면 여기에 나타나요.'}{' '}
+            <button
+              type="button"
+              onClick={() => setShowHiddenPlacements((v) => !v)}
+              style={{ ...textStyle('12/body/med'), color: color.text.primary, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              {showHiddenPlacements ? '다시 숨기기' : '그래도 보기'}
+            </button>
           </p>
         )}
       </Section>
