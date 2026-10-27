@@ -16,7 +16,7 @@ import {
 // 왼쪽 미리보기 · 오른쪽 설정 2단 레이아웃. 좁은 화면(960px 이하)에서는 미리보기가 위로 올라가 한 줄로 쌓인다.
 // Shadow DOM 안이라 <style>로 넣는다.
 const LAYOUT_CSS = `
-.scs-layout { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.scs-layout { display: grid; grid-template-columns: minmax(340px, 460px) minmax(0, 1fr); gap: 24px; align-items: start; }
 .scs-preview { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow: auto; }
 .scs-layout--pc { grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); }
 @media (max-width: 960px) {
@@ -355,7 +355,7 @@ function Preview({ draft, base, device }: { draft: StarCommentsConfig; base: Sta
 
   const chip = (active = false): CSSProperties => ({
     ...textStyle('12/body/med'),
-    padding: '5px 10px',
+    padding: '7px 14px',
     borderRadius: 999,
     background: active ? color.text.primary : color.bg['grouped-default'],
     color: active ? color.bg.base : color.text.primary,
@@ -366,8 +366,8 @@ function Preview({ draft, base, device }: { draft: StarCommentsConfig; base: Sta
       key={c.nickname}
       style={{
         border: `1px ${removed ? 'dashed' : 'solid'} ${color.border['divider-a']}`,
-        borderRadius: 10,
-        padding: 12,
+        borderRadius: 12,
+        padding: 16,
         boxShadow: removed ? 'none' : shadow['default-small'],
         opacity: removed ? 0.6 : 1,
         ...mark(removed || addedCard(c.nickname)),
@@ -380,18 +380,18 @@ function Preview({ draft, base, device }: { draft: StarCommentsConfig; base: Sta
         </span>
         <span style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'] }}>{c.time}</span>
       </div>
-      <div style={{ ...textStyle('13/body/reg'), color: color.text.primary, margin: '6px 0 8px', textDecoration: removed ? 'line-through' : 'none' }}>
+      <div style={{ ...textStyle('13/body/reg'), color: color.text.primary, margin: '10px 0 14px', lineHeight: 1.55, textDecoration: removed ? 'line-through' : 'none' }}>
         {c.body}
       </div>
-      <div style={{ ...textStyle('12/body/reg'), color: color.text.secondary, background: color.bg['grouped-default'], borderRadius: 6, padding: '6px 8px', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+      <div style={{ ...textStyle('12/body/reg'), color: color.text.secondary, background: color.bg['grouped-default'], borderRadius: 8, padding: '9px 12px', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
         <span>{c.title}</span>
         <span style={{ ...textStyle('12/body/bold'), color: color.text.primary, ...mark(labelChanged(c.kind)) }}>{draft.linkLabels[c.kind]} ›</span>
       </div>
     </div>
   )
   const screen = (
-    <div style={{ background: color.bg.base, borderRadius: 12, padding: pc ? 24 : 16, border: `1px solid ${color.border['divider-a']}` }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+    <div style={{ background: color.bg.base, borderRadius: 12, padding: pc ? 28 : 22, border: `1px solid ${color.border['divider-a']}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ ...textStyle('16/title/bold'), color: color.text.primary, ...mark(titleChanged) }}>{draft.title}</div>
         {draft.showToggle && (
           <span
@@ -406,11 +406,11 @@ function Preview({ draft, base, device }: { draft: StarCommentsConfig; base: Sta
         )}
       </div>
       {(draft.subtitle || subtitleChanged) && (
-        <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary, marginTop: 2, ...mark(subtitleChanged) }}>
+        <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary, marginTop: 6, lineHeight: 1.5, ...mark(subtitleChanged) }}>
           {draft.subtitle || '(부제 없음)'}
         </div>
       )}
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '12px 0' }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '18px 0' }}>
         <span style={chip(true)}>전체 스타</span>
         {now.stars.map((name, i) => (
           <span key={name} style={{ ...chip(), ...mark(chipChanged(name, i)) }}>
@@ -427,7 +427,7 @@ function Preview({ draft, base, device }: { draft: StarCommentsConfig; base: Sta
         <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary, ...mark(emptyChanged) }}>{draft.emptyText}</div>
       ) : null}
       {now.cards.length + removedCards.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: pc ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: pc ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)', gap: 14 }}>
           {now.cards.map((c) => card(c, false))}
           {removedCards.map((c) => card(c, true))}
         </div>
@@ -435,14 +435,14 @@ function Preview({ draft, base, device }: { draft: StarCommentsConfig; base: Sta
     </div>
   )
   return (
-    <div style={{ background: color.bg['grouped-default'], borderRadius: 12, padding: 16 }}>
+    <div style={{ background: color.bg['grouped-default'], borderRadius: 12, padding: 22 }}>
       {anyChange && (
-        <div data-testid="preview-legend" style={{ ...textStyle('12/body/med'), color: color.text.primary, display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 10px' }}>
+        <div data-testid="preview-legend" style={{ ...textStyle('12/body/med'), color: color.text.primary, display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 16px' }}>
           <span aria-hidden="true" style={{ width: 14, height: 14, borderRadius: 3, ...CHANGED_STYLE, outlineOffset: 0, display: 'inline-block' }} />
           노란색 표시는 아직 저장하지 않은 변경이에요
         </div>
       )}
-      <dl style={{ margin: '0 0 12px', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px' }}>
+      <dl style={{ margin: '0 0 20px', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '10px 16px', lineHeight: 1.5 }}>
         {now.summary.map(([label, value], i) => (
           <div key={label} style={{ display: 'contents' }}>
             <dt style={{ ...textStyle('12/body/bold'), color: color.text['sub-a'] }}>{label}</dt>
