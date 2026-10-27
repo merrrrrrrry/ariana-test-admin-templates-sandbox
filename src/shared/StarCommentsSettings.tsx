@@ -4,6 +4,8 @@ import { isLocalPreview, readStoredConfig, writeStoredConfig } from './storage'
 import {
   APPLY_WAIT_MS,
   AUDIENCES,
+  endAt,
+  startAt,
   DEFAULT_CONFIG,
   LIMITS,
   PLACEMENTS,
@@ -301,7 +303,10 @@ function derivePreview(cfg: StarCommentsConfig) {
   )
   const audience = AUDIENCES.find((a) => a.key === cfg.audience)
   const placementsOn = PLACEMENTS.filter((p) => cfg.placements[p.key]).map((p) => p.label)
-  const period = cfg.startDate || cfg.endDate ? `${cfg.startDate ?? '처음'} ~ ${cfg.endDate ?? '계속'}` : '항상'
+  const period =
+    cfg.startDate || cfg.endDate
+      ? `${cfg.startDate ? `${cfg.startDate} ${cfg.startTime ?? '00:00'}` : '처음'} ~ ${cfg.endDate ? `${cfg.endDate} ${cfg.endTime ?? '23:59'}` : '계속'}`
+      : '항상'
   const summary: [string, string][] = [
     ['상태', cfg.enabled ? '노출 중' : '꺼짐 — 팬 화면에 안 보여요'],
     ['기간', period],
@@ -701,17 +706,46 @@ export default function StarCommentsSettings() {
           멤버십 가입자·POP 구독자는 가입 여부를 알려 주는 플랫폼 API가 아직 없어서 선택할 수 없어요. API가 열리면 연결할 수 있게 자리만 만들어 두었어요.
         </p>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '12px 0 4px' }}>
-          <div style={{ flex: '1 1 180px' }}>
-            <Field label="노출 시작일" hint="비우면 바로 노출 (한국 시간)">
-              <input type="date" style={inputStyle} value={draft.startDate ?? ''} onChange={(e) => patch({ startDate: e.target.value || null })} />
+          <div style={{ flex: '1 1 340px' }}>
+            <Field label="노출 시작" hint="날짜를 비우면 바로 노출 · 시각을 비우면 00:00부터 (한국 시간)">
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 168px', gap: 8 }}>
+                <input type="date" style={inputStyle} value={draft.startDate ?? ''} onChange={(e) => patch({ startDate: e.target.value || null, ...(e.target.value ? {} : { startTime: null }) })} />
+                <input
+                  type="time"
+                  aria-label="노출 시작 시각"
+                  style={{ ...inputStyle, width: '100%', opacity: draft.startDate ? 1 : 0.5 }}
+                  value={draft.startTime ?? ''}
+                  disabled={!draft.startDate}
+                  onChange={(e) => patch({ startTime: e.target.value || null })}
+                />
+              </div>
             </Field>
           </div>
-          <div style={{ flex: '1 1 180px' }}>
-            <Field label="노출 종료일" hint="비우면 계속 노출 (종료일 23:59까지)">
-              <input type="date" style={inputStyle} value={draft.endDate ?? ''} onChange={(e) => patch({ endDate: e.target.value || null })} />
+          <div style={{ flex: '1 1 340px' }}>
+            <Field label="노출 종료" hint="날짜를 비우면 계속 노출 · 시각을 비우면 그날 23:59까지 (한국 시간)">
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 168px', gap: 8 }}>
+                <input type="date" style={inputStyle} value={draft.endDate ?? ''} onChange={(e) => patch({ endDate: e.target.value || null, ...(e.target.value ? {} : { endTime: null }) })} />
+                <input
+                  type="time"
+                  aria-label="노출 종료 시각"
+                  style={{ ...inputStyle, width: '100%', opacity: draft.endDate ? 1 : 0.5 }}
+                  value={draft.endTime ?? ''}
+                  disabled={!draft.endDate}
+                  onChange={(e) => patch({ endTime: e.target.value || null })}
+                />
+              </div>
             </Field>
           </div>
         </div>
+        {(() => {
+          const s = startAt(draft)
+          const e = endAt(draft)
+          return s !== null && e !== null && e < s ? (
+            <p role="alert" style={{ ...textStyle('12/body/med'), color: color.text.red, margin: '0 0 8px' }}>
+              종료가 시작보다 빨라요. 이대로 저장하면 어느 때에도 노출되지 않아요.
+            </p>
+          ) : null
+        })()}
         <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '8px 0 2px' }}>어디에 보여줄까요</div>
         {PLACEMENTS.map(({ key, label }) => (
           <Check

@@ -66,6 +66,9 @@ export interface StarCommentsConfig {
   /** 노출 기간(한국 시간 기준 날짜, YYYY-MM-DD). 비우면 제한 없음 */
   startDate: string | null
   endDate: string | null
+  /** 노출 시작 · 종료 시각(한국 시간, HH:mm). 비우면 시작일은 00:00부터, 종료일은 23:59(59초)까지 */
+  startTime: string | null
+  endTime: string | null
   /** 누구에게 보여줄지 (지금은 all · login만 동작) */
   audience: AudienceKey
   /** 자리별 노출 */
@@ -108,6 +111,8 @@ export const DEFAULT_CONFIG: StarCommentsConfig = {
   showToggle: true,
   startDate: null,
   endDate: null,
+  startTime: null,
+  endTime: null,
   audience: 'all',
   // 기존에 이미 보이던 두 자리만 켜 둔다. 새로 만든 자리는 꺼진 채로 시작해서, 포털에 위젯을 게시해도
   // 어드민에서 체크하기 전에는 팬 화면이 달라지지 않는다.
@@ -157,6 +162,11 @@ export const LIMITS = {
 } as const
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
+
+function time(value: unknown): string | null {
+  return typeof value === 'string' && TIME_PATTERN.test(value) ? value : null
+}
 
 function text(value: unknown, fallback: string, max: number): string {
   if (typeof value !== 'string') return fallback
@@ -218,6 +228,9 @@ export function parseConfig(raw: unknown): StarCommentsConfig {
     showToggle: bool(r.showToggle, d.showToggle),
     startDate: date(r.startDate),
     endDate: date(r.endDate),
+    // 시각은 날짜가 있을 때만 의미가 있다.
+    startTime: date(r.startDate) ? time(r.startTime) : null,
+    endTime: date(r.endDate) ? time(r.endTime) : null,
     // 아직 쓸 수 없는 대상(membership · pop)이나 모르는 값은 전체 공개로 본다.
     audience: AUDIENCES.find((a) => a.key === r.audience && a.available)?.key ?? d.audience,
     placements,
@@ -253,12 +266,24 @@ export function parseConfig(raw: unknown): StarCommentsConfig {
   }
 }
 
-/** 지금 이 자리에서 보여줘야 하는지: 전체 스위치 · 자리별 스위치 · 노출 기간. */
+/** 노출 시작 시각(ms). 시작일이 없으면 null. 시각을 비우면 00:00. */
+export function startAt(config: Pick<StarCommentsConfig, 'startDate' | 'startTime'>): number | null {
+  return config.startDate ? Date.parse(`${config.startDate}T${config.startTime ?? '00:00'}:00+09:00`) : null
+}
+
+/** 노출 종료 시각(ms). 종료일이 없으면 null. 시각을 비우면 그날 23:59:59까지, 적으면 그 분이 끝나는 59초까지. */
+export function endAt(config: Pick<StarCommentsConfig, 'endDate' | 'endTime'>): number | null {
+  return config.endDate ? Date.parse(`${config.endDate}T${config.endTime ?? '23:59'}:59+09:00`) : null
+}
+
+/** 지금 이 자리에서 보여줘야 하는지: 전체 스위치 · 자리별 스위치 · 노출 기간(날짜 + 시각, 한국 시간). */
 export function isVisible(config: StarCommentsConfig, placement: PlacementKey, now = Date.now()): boolean {
   if (!config.enabled) return false
   if (!config.placements[placement]) return false
-  if (config.startDate && now < Date.parse(`${config.startDate}T00:00:00+09:00`)) return false
-  if (config.endDate && now > Date.parse(`${config.endDate}T23:59:59+09:00`)) return false
+  const start = startAt(config)
+  const end = endAt(config)
+  if (start !== null && now < start) return false
+  if (end !== null && now > end) return false
   return true
 }
 
