@@ -4,6 +4,7 @@ import { isLocalPreview, readStoredConfig, writeStoredConfig } from './storage'
 import {
   APPLY_WAIT_MS,
   AUDIENCES,
+  VIEW_MODES,
   endAt,
   startAt,
   DEFAULT_CONFIG,
@@ -312,6 +313,7 @@ function derivePreview(cfg: StarCommentsConfig) {
     ['기간', period],
     ['대상', audience?.label ?? '전체 공개'],
     ['스위치', cfg.showToggle ? '보여주기' : '숨기기'],
+    ['보기', `${cfg.viewMode === 'list' ? '리스트' : '블록'}${cfg.allowViewSwitch ? ' · 방문자가 바꿀 수 있음' : ''}`],
     ['자리', placementsOn.length ? placementsOn.join(' · ') : '켜진 자리가 없어요'],
     ['기준', curationSummary(cfg)],
   ]
@@ -366,17 +368,28 @@ function Preview({ draft, base, device }: { draft: StarCommentsConfig; base: Sta
     color: active ? color.bg.base : color.text.primary,
   })
   const pc = device === 'pc'
+  const asList = draft.viewMode === 'list'
   const card = (c: (typeof SAMPLE_COMMENTS)[number], removed: boolean) => (
     <div
       key={c.nickname}
-      style={{
-        border: `1px ${removed ? 'dashed' : 'solid'} ${color.border['divider-a']}`,
-        borderRadius: 12,
-        padding: 16,
-        boxShadow: removed ? 'none' : shadow['default-small'],
-        opacity: removed ? 0.6 : 1,
-        ...mark(removed || addedCard(c.nickname)),
-      }}
+      style={
+        asList
+          ? {
+              // 리스트: 상자 없이 줄 사이 구분선만
+              borderBottom: `1px ${removed ? 'dashed' : 'solid'} ${color.border['divider-a']}`,
+              padding: '14px 4px',
+              opacity: removed ? 0.6 : 1,
+              ...mark(removed || addedCard(c.nickname)),
+            }
+          : {
+              border: `1px ${removed ? 'dashed' : 'solid'} ${color.border['divider-a']}`,
+              borderRadius: 12,
+              padding: 16,
+              boxShadow: removed ? 'none' : shadow['default-small'],
+              opacity: removed ? 0.6 : 1,
+              ...mark(removed || addedCard(c.nickname)),
+            }
+      }
     >
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <span style={{ ...textStyle('13/body/bold'), color: color.text.primary }}>
@@ -388,7 +401,7 @@ function Preview({ draft, base, device }: { draft: StarCommentsConfig; base: Sta
       <div style={{ ...textStyle('13/body/reg'), color: color.text.primary, margin: '10px 0 14px', lineHeight: 1.55, textDecoration: removed ? 'line-through' : 'none' }}>
         {c.body}
       </div>
-      <div style={{ ...textStyle('12/body/reg'), color: color.text.secondary, background: color.bg['grouped-default'], borderRadius: 8, padding: '9px 12px', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+      <div style={{ ...textStyle('12/body/reg'), color: color.text.secondary, background: asList ? 'transparent' : color.bg['grouped-default'], borderRadius: 8, padding: asList ? 0 : '9px 12px', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
         <span>{c.title}</span>
         <span style={{ ...textStyle('12/body/bold'), color: color.text.primary, ...mark(labelChanged(c.kind)) }}>{draft.linkLabels[c.kind]} ›</span>
       </div>
@@ -432,7 +445,7 @@ function Preview({ draft, base, device }: { draft: StarCommentsConfig; base: Sta
         <div style={{ ...textStyle('13/body/reg'), color: color.text.secondary, ...mark(emptyChanged) }}>{draft.emptyText}</div>
       ) : null}
       {now.cards.length + removedCards.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: pc ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: pc && !asList ? 'repeat(2, minmax(0, 1fr))' : 'minmax(0, 1fr)', gap: asList ? 0 : 14 }}>
           {now.cards.map((c) => card(c, false))}
           {removedCards.map((c) => card(c, true))}
         </div>
@@ -906,6 +919,29 @@ export default function StarCommentsSettings() {
       </Section>
 
       <Section title="목록">
+        <div style={{ ...textStyle('13/body/med'), color: color.text.primary, margin: '0 0 2px' }}>보기 방식</div>
+        {VIEW_MODES.map(({ key, label, hint }) => (
+          <label key={key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '6px 0', cursor: 'pointer' }}>
+            <input
+              type="radio"
+              name="scs-view-mode"
+              checked={draft.viewMode === key}
+              onChange={() => patch({ viewMode: key })}
+              style={{ width: 18, height: 18, marginTop: 2, accentColor: 'currentColor', cursor: 'pointer' }}
+            />
+            <span>
+              <span style={{ ...textStyle('14/title/med'), color: color.text.primary, display: 'block' }}>{label}</span>
+              <span style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], display: 'block' }}>{hint}</span>
+            </span>
+          </label>
+        ))}
+        <Check
+          checked={draft.allowViewSwitch}
+          onChange={(allowViewSwitch) => patch({ allowViewSwitch })}
+          label="방문자가 보기 방식을 바꿀 수 있게 하기"
+          hint="정렬 옆에 블록 / 리스트 전환 버튼이 생기고, 방문자가 고른 방식은 그 브라우저에 기억돼요. 끄면 위에서 고른 방식으로 고정돼요."
+        />
+        <div style={{ height: 16 }} />
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 200px' }}>
             <Field label="기본 정렬">

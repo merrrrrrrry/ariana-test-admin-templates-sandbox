@@ -41,6 +41,11 @@ export const PLACEMENTS = [
 export type PlacementKey = (typeof PLACEMENTS)[number]['key']
 export type SortKey = 'latest' | 'reactions'
 export type PerPostOrder = 'latest' | 'reactions'
+export type ViewMode = 'block' | 'list'
+export const VIEW_MODES = [
+  { key: 'block', label: '블록으로 보기', hint: '카드가 바둑판처럼 나란히 놓여요 (지금까지의 모양).' },
+  { key: 'list', label: '리스트로 보기', hint: '한 줄씩 위에서 아래로 쭉 이어져요. 글이 길어도 읽기 편해요.' },
+] as const
 
 // 누구에게 보여줄지. membership·pop은 가입/구독 여부를 알려 주는 유저 API가 아직 없어서(허브 VOC #85, C등급)
 // 지금은 고를 수 없다 — 어드민에 자리만 두고 available:false로 막아 둔다. API가 열리면 available을 true로 바꾸고
@@ -99,6 +104,10 @@ export interface StarCommentsConfig {
   /** 숨길 댓글 ID — 태그 글 안에서 한두 개만 빼고 싶을 때 */
   hiddenCommentIds: string[]
   defaultSort: SortKey
+  /** 기본 보기 방식: 블록(카드 바둑판) / 리스트(한 줄씩) */
+  viewMode: ViewMode
+  /** 켜면 방문자가 보기 방식을 직접 바꿀 수 있고(이 브라우저에 기억), 끄면 viewMode로 고정 */
+  allowViewSwitch: boolean
   /** 한 번에 보여줄 개수 (6~30) */
   pageSize: number
 }
@@ -143,6 +152,8 @@ export const DEFAULT_CONFIG: StarCommentsConfig = {
   minReactions: 0,
   hiddenCommentIds: [],
   defaultSort: 'latest',
+  viewMode: 'block',
+  allowViewSwitch: false,
   pageSize: 12,
 }
 
@@ -262,6 +273,8 @@ export function parseConfig(raw: unknown): StarCommentsConfig {
     minReactions: int(r.minReactions, d.minReactions, 0, LIMITS.minReactionsMax),
     hiddenCommentIds: list(r.hiddenCommentIds, LIMITS.commentIdLength),
     defaultSort: r.defaultSort === 'reactions' ? 'reactions' : 'latest',
+    viewMode: r.viewMode === 'list' ? 'list' : 'block',
+    allowViewSwitch: bool(r.allowViewSwitch, d.allowViewSwitch),
     pageSize: Math.min(LIMITS.pageSizeMax, Math.max(LIMITS.pageSizeMin, pageSizeRaw)),
   }
 }
