@@ -41,6 +41,11 @@ export const PLACEMENTS = [
 export type PlacementKey = (typeof PLACEMENTS)[number]['key']
 export type SortKey = 'latest' | 'reactions'
 export type PerPostOrder = 'latest' | 'reactions'
+export type ViewMode = 'block' | 'list'
+export const VIEW_MODES = [
+  { key: 'block', label: '블록으로 보기', hint: '카드가 바둑판처럼 나란히 놓여요 (지금까지의 모양).' },
+  { key: 'list', label: '리스트로 보기', hint: '한 줄씩 위에서 아래로 쭉 이어져요. 글이 길어도 읽기 편해요.' },
+] as const
 
 // 누구에게 보여줄지. membership·pop은 가입/구독 여부를 알려 주는 유저 API가 아직 없어서(허브 VOC #85, C등급)
 // 지금은 고를 수 없다 — 어드민에 자리만 두고 available:false로 막아 둔다. API가 열리면 available을 true로 바꾸고
@@ -66,6 +71,9 @@ export interface StarCommentsConfig {
   /** 노출 기간(한국 시간 기준 날짜, YYYY-MM-DD). 비우면 제한 없음 */
   startDate: string | null
   endDate: string | null
+  /** 노출 시작 · 종료 시각(한국 시간, HH:mm). 비우면 시작일은 00:00부터, 종료일은 23:59(59초)까지 */
+  startTime: string | null
+  endTime: string | null
   /** 누구에게 보여줄지 (지금은 all · login만 동작) */
   audience: AudienceKey
   /** 자리별 노출 */
@@ -96,6 +104,10 @@ export interface StarCommentsConfig {
   /** 숨길 댓글 ID — 태그 글 안에서 한두 개만 빼고 싶을 때 */
   hiddenCommentIds: string[]
   defaultSort: SortKey
+  /** 기본 보기 방식: 블록(카드 바둑판) / 리스트(한 줄씩) */
+  viewMode: ViewMode
+  /** 켜면 방문자가 보기 방식을 직접 바꿀 수 있고(이 브라우저에 기억), 끄면 viewMode로 고정 */
+  allowViewSwitch: boolean
   /** 한 번에 보여줄 개수 (6~30) */
   pageSize: number
 }
@@ -108,6 +120,8 @@ export const DEFAULT_CONFIG: StarCommentsConfig = {
   showToggle: true,
   startDate: null,
   endDate: null,
+  startTime: null,
+  endTime: null,
   audience: 'all',
   // 기존에 이미 보이던 두 자리만 켜 둔다. 새로 만든 자리는 꺼진 채로 시작해서, 포털에 위젯을 게시해도
   // 어드민에서 체크하기 전에는 팬 화면이 달라지지 않는다.
@@ -138,6 +152,8 @@ export const DEFAULT_CONFIG: StarCommentsConfig = {
   minReactions: 0,
   hiddenCommentIds: [],
   defaultSort: 'latest',
+  viewMode: 'block',
+  allowViewSwitch: false,
   pageSize: 12,
 }
 
@@ -157,6 +173,11 @@ export const LIMITS = {
 } as const
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
+
+function time(value: unknown): string | null {
+  return typeof value === 'string' && TIME_PATTERN.test(value) ? value : null
+}
 
 function text(value: unknown, fallback: string, max: number): string {
   if (typeof value !== 'string') return fallback
@@ -218,6 +239,9 @@ export function parseConfig(raw: unknown): StarCommentsConfig {
     showToggle: bool(r.showToggle, d.showToggle),
     startDate: date(r.startDate),
     endDate: date(r.endDate),
+    // 시각은 날짜가 있을 때만 의미가 있다.
+    startTime: date(r.startDate) ? time(r.startTime) : null,
+    endTime: date(r.endDate) ? time(r.endTime) : null,
     // 아직 쓸 수 없는 대상(membership · pop)이나 모르는 값은 전체 공개로 본다.
     audience: AUDIENCES.find((a) => a.key === r.audience && a.available)?.key ?? d.audience,
     placements,
@@ -249,16 +273,30 @@ export function parseConfig(raw: unknown): StarCommentsConfig {
     minReactions: int(r.minReactions, d.minReactions, 0, LIMITS.minReactionsMax),
     hiddenCommentIds: list(r.hiddenCommentIds, LIMITS.commentIdLength),
     defaultSort: r.defaultSort === 'reactions' ? 'reactions' : 'latest',
+    viewMode: r.viewMode === 'list' ? 'list' : 'block',
+    allowViewSwitch: bool(r.allowViewSwitch, d.allowViewSwitch),
     pageSize: Math.min(LIMITS.pageSizeMax, Math.max(LIMITS.pageSizeMin, pageSizeRaw)),
   }
 }
 
-/** 지금 이 자리에서 보여줘야 하는지: 전체 스위치 · 자리별 스위치 · 노출 기간. */
+/** 노출 시작 시각(ms). 시작일이 없으면 null. 시각을 비우면 00:00. */
+export function startAt(config: Pick<StarCommentsConfig, 'startDate' | 'startTime'>): number | null {
+  return config.startDate ? Date.parse(`${config.startDate}T${config.startTime ?? '00:00'}:00+09:00`) : null
+}
+
+/** 노출 종료 시각(ms). 종료일이 없으면 null. 시각을 비우면 그날 23:59:59까지, 적으면 그 분이 끝나는 59초까지. */
+export function endAt(config: Pick<StarCommentsConfig, 'endDate' | 'endTime'>): number | null {
+  return config.endDate ? Date.parse(`${config.endDate}T${config.endTime ?? '23:59'}:59+09:00`) : null
+}
+
+/** 지금 이 자리에서 보여줘야 하는지: 전체 스위치 · 자리별 스위치 · 노출 기간(날짜 + 시각, 한국 시간). */
 export function isVisible(config: StarCommentsConfig, placement: PlacementKey, now = Date.now()): boolean {
   if (!config.enabled) return false
   if (!config.placements[placement]) return false
-  if (config.startDate && now < Date.parse(`${config.startDate}T00:00:00+09:00`)) return false
-  if (config.endDate && now > Date.parse(`${config.endDate}T23:59:59+09:00`)) return false
+  const start = startAt(config)
+  const end = endAt(config)
+  if (start !== null && now < start) return false
+  if (end !== null && now > end) return false
   return true
 }
 
