@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type CSSProperties, type Rea
 import { color, shadow, textStyle } from '@bstage-sdk/design/admin'
 import { isLocalPreview, readStoredConfig, resolveOperatorName, writeStoredConfig } from './storage'
 import { UNKNOWN_ENVIRONMENT, detectStageEnvironment, placementVisible, type StageEnvironment } from './stageEnvironment'
+import { runConnectionChecks, type CheckResult, type CheckState } from './connectionCheck'
 import {
   APPLY_WAIT_MS,
   AUDIENCES,
@@ -559,6 +560,64 @@ function ApplyProgress({ savedAt }: { savedAt: number }) {
   )
 }
 
+const CHECK_MARK: Record<CheckState, string> = { ok: '✓', info: 'ⓘ', fail: '✕', unavailable: '?' }
+
+// 연결 점검: 버튼을 눌러야 호출한다(열 때마다 불필요한 호출을 하지 않는다).
+function ConnectionCheck() {
+  const [results, setResults] = useState<CheckResult[] | null>(null)
+  const [running, setRunning] = useState(false)
+  const [checkedAt, setCheckedAt] = useState<number | null>(null)
+  const local = isLocalPreview()
+
+  const run = () => {
+    setRunning(true)
+    runConnectionChecks()
+      .then((next) => {
+        setResults(next)
+        setCheckedAt(Date.now())
+      })
+      .finally(() => setRunning(false))
+  }
+
+  return (
+    <Section title="연결 점검" hint="이 화면과 팬 화면이 쓰는 API가 지금 응답하는지 확인해요. 팬 화면이 쓰는 공개 API는 어드민 키로 확인이 안 될 수 있어요.">
+      <button type="button" style={buttonStyle('secondary', running || local)} disabled={running || local} onClick={run}>
+        {running ? '점검 중…' : '지금 점검'}
+      </button>
+      {local && (
+        <p style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], margin: '8px 0 0' }}>
+          로컬 미리보기에서는 어드민 API를 부를 수 없어서 점검하지 않아요.
+        </p>
+      )}
+      {results && (
+        <ul style={{ listStyle: 'none', margin: '12px 0 0', padding: 0, display: 'grid', gap: 8 }}>
+          {results.map((r) => (
+            <li key={r.name} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+              <span
+                aria-hidden
+                style={{ ...textStyle('13/body/med'), width: 16, color: r.state === 'fail' ? color.text.red : color.text.primary }}
+              >
+                {CHECK_MARK[r.state]}
+              </span>
+              <span style={{ minWidth: 0 }}>
+                <span style={{ ...textStyle('13/body/med'), color: color.text.primary }}>{r.name}</span>
+                <span style={{ ...textStyle('12/body/reg'), color: r.state === 'fail' ? color.text.red : color.text['sub-a'], display: 'block' }}>
+                  {r.note} · {r.ms}ms
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {checkedAt !== null && (
+        <p style={{ ...textStyle('12/body/reg'), color: color.text['sub-a'], margin: '10px 0 0' }}>
+          마지막 점검: {formatKst(new Date(checkedAt).toISOString())}
+        </p>
+      )}
+    </Section>
+  )
+}
+
 export default function StarCommentsSettings() {
   const [loaded, setLoaded] = useState<StarCommentsConfig | null>(null)
   const [draft, setDraft] = useState<StarCommentsConfig>(DEFAULT_CONFIG)
@@ -1028,6 +1087,8 @@ export default function StarCommentsSettings() {
           </div>
         </div>
       </Section>
+
+      <ConnectionCheck />
 
       </div>
       </div>
